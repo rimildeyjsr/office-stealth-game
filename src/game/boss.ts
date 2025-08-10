@@ -197,4 +197,37 @@ export function isPlayerDetected(player: Player, boss: Boss, gameMode: GameMode)
   return distance <= boss.detectionRadius;
 }
 
+// Phase 2.2: probability-based boss selection and spawn delay helpers
+export function selectRandomBossType(exclude?: typeof BossType[keyof typeof BossType]): typeof BossType[keyof typeof BossType] {
+  const random = Math.random();
+  const configs = Object.values(BOSS_CONFIGS).filter((c) => (exclude ? c.type !== exclude : true));
+  const totalProb = configs.reduce((sum, cfg) => sum + cfg.spawnProbability, 0);
+  if (configs.length === 0 || totalProb === 0) {
+    return BossType.MANAGER;
+  }
+  let cumulative = 0;
+  for (const cfg of configs) {
+    cumulative += cfg.spawnProbability / totalProb;
+    if (random <= cumulative) return cfg.type;
+  }
+  return configs[configs.length - 1].type;
+}
+
+export function getRandomSpawnDelay(bossType: typeof BossType[keyof typeof BossType]): number {
+  const cfg = BOSS_CONFIGS[bossType];
+  const [min, max] = cfg.spawnDelayMs;
+  return Math.random() * (max - min) + min;
+}
+
+export function getRandomDespawnDuration(bossType: typeof BossType[keyof typeof BossType]): number {
+  // Simple heuristic: longer-lived for rarer bosses
+  const base = 12000; // 12s baseline
+  const rarityBonus =
+    bossType === BossType.CEO ? 14000 :
+    bossType === BossType.VP ? 10000 :
+    bossType === BossType.DIRECTOR ? 6000 : 3000;
+  const jitter = Math.random() * 4000 - 2000; // ±2s
+  return Math.max(6000, base + rarityBonus + jitter);
+}
+
 

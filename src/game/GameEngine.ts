@@ -2,7 +2,7 @@ import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, POIN
 import type { GameState, Player } from './types.ts';
 import { createOfficeLayout, getPlayerSeatAnchor, isNearSeatAnchor } from './office.ts';
 import { checkCollision } from './collision.ts';
-import { createBossFromConfig, isPlayerDetected, updateBoss } from './boss.ts';
+import { createBossFromConfig, getRandomDespawnDuration, getRandomSpawnDelay, isPlayerDetected, selectRandomBossType, updateBoss } from './boss.ts';
 import { BossType } from './types.ts';
 
 export interface InputState {
@@ -21,16 +21,23 @@ export function createInitialState(): GameState {
     speed: PLAYER_SPEED,
   };
 
+  const desks = createOfficeLayout();
+  const now = performance.now();
+  const initialBoss = createBossFromConfig(BOSS_CONFIGS[BossType.MANAGER], desks);
+
   return {
     player,
-    bosses: [createBossFromConfig(BOSS_CONFIGS[BossType.MANAGER], createOfficeLayout())],
+    // Start with a Manager boss present immediately
+    bosses: [initialBoss],
     gameMode: 'work',
     score: 0,
     isGameOver: false,
-    desks: createOfficeLayout(),
+    desks,
     modeOverlayStartMs: null,
     // Init to now so score intervals start immediate in gaming mode
-    lastScoreUpdateMs: performance.now(),
+    lastScoreUpdateMs: now,
+    nextBossSpawnMs: null,
+    activeBossDespawnMs: now + getRandomDespawnDuration(BossType.MANAGER),
   };
 }
 
@@ -128,6 +135,34 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     lastScoreUpdateMs = nowMs;
   }
 
+  // Phase 2.2: Boss spawning logic (single active boss)
+  let bossesOut = nextBosses;
+  let nextBossSpawnMs = state.nextBossSpawnMs ?? null;
+  let activeBossDespawnMs = state.activeBossDespawnMs ?? null;
+  // Spawn when timer elapses and no active boss
+  if (bossesOut.length === 0 && nextBossSpawnMs !== null && nowMs >= nextBossSpawnMs) {
+    const bossType = selectRandomBossType();
+    const newBoss = createBossFromConfig(BOSS_CONFIGS[bossType], state.desks);
+    bossesOut = [newBoss];
+    nextBossSpawnMs = null; // reset until despawn
+    activeBossDespawnMs = nowMs + getRandomDespawnDuration(bossType);
+  }
+  // If no boss and no timer, schedule next spawn using Manager delay for now
+  if (bossesOut.length === 0 && nextBossSpawnMs === null) {
+    const delay = getRandomSpawnDelay(BossType.MANAGER);
+    nextBossSpawnMs = nowMs + delay;
+  }
+  // Despawn active boss when time elapses
+  if (bossesOut.length > 0 && activeBossDespawnMs !== null && nowMs >= activeBossDespawnMs) {
+    // Immediately spawn next boss based on probabilities, excluding current type
+    const currentType = bossesOut[0].type;
+    const nextType = selectRandomBossType(currentType);
+    const spawned = createBossFromConfig(BOSS_CONFIGS[nextType], state.desks);
+    bossesOut = [spawned];
+    activeBossDespawnMs = nowMs + getRandomDespawnDuration(nextType);
+    nextBossSpawnMs = null;
+  }
+
   return {
     ...state,
     player: {
@@ -136,10 +171,12 @@ export function updateGameState(state: GameState, input: InputState): GameState 
       isSitting,
     },
     gameMode,
-    bosses: nextBosses,
+    bosses: bossesOut,
     isGameOver,
     score: nextScore,
     lastScoreUpdateMs,
+    nextBossSpawnMs,
+    activeBossDespawnMs,
   };
 }
 

@@ -58,6 +58,9 @@ export interface GameState {
   desks: Desk[];
   modeOverlayStartMs?: number | null; // for 200ms fade on mode switch
   lastScoreUpdateMs?: number | null;
+  // Phase 2.2: boss spawn scheduling
+  nextBossSpawnMs?: number | null;
+  activeBossDespawnMs?: number | null;
 }
 
 export interface Desk {
