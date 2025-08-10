@@ -1,8 +1,9 @@
-import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, POINTS_PER_TICK, SCORE_UPDATE_INTERVAL } from './constants.ts';
+import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, POINTS_PER_TICK, SCORE_UPDATE_INTERVAL, BOSS_CONFIGS } from './constants.ts';
 import type { GameState, Player } from './types.ts';
 import { createOfficeLayout, getPlayerSeatAnchor, isNearSeatAnchor } from './office.ts';
 import { checkCollision } from './collision.ts';
-import { createBoss, isPlayerDetected, updateBoss } from './boss.ts';
+import { createBossFromConfig, isPlayerDetected, updateBoss } from './boss.ts';
+import { BossType } from './types.ts';
 
 export interface InputState {
   up: boolean;
@@ -22,7 +23,7 @@ export function createInitialState(): GameState {
 
   return {
     player,
-    bosses: [createBoss(createOfficeLayout())],
+    bosses: [createBossFromConfig(BOSS_CONFIGS[BossType.MANAGER], createOfficeLayout())],
     gameMode: 'work',
     score: 0,
     isGameOver: false,
@@ -182,8 +183,10 @@ export function drawFrame(ctx: CanvasRenderingContext2D, state: GameState, frame
     ctx.arc(boss.position.x, boss.position.y, boss.detectionRadius, 0, Math.PI * 2);
     ctx.stroke();
     // Boss square
-    ctx.fillStyle = '#EF4444';
-    ctx.fillRect(boss.position.x - BOSS_SIZE / 2, boss.position.y - BOSS_SIZE / 2, BOSS_SIZE, BOSS_SIZE);
+    const visualSize = boss.size ?? BOSS_SIZE;
+    const visualColor = boss.color ?? '#EF4444';
+    ctx.fillStyle = visualColor;
+    ctx.fillRect(boss.position.x - visualSize / 2, boss.position.y - visualSize / 2, visualSize, visualSize);
   }
 
   // Game Over overlay

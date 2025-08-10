@@ -1,11 +1,18 @@
-import { BOSS_DETECTION_RADIUS, BOSS_SPEED, CANVAS_HEIGHT, CANVAS_WIDTH } from './constants.ts';
-import type { Boss, Desk, GameMode, Player, Position } from './types.ts';
+import { CANVAS_HEIGHT, CANVAS_WIDTH, BOSS_CONFIGS } from './constants.ts';
+import type { Boss, BossConfig, Desk, GameMode, Player, Position } from './types.ts';
+import { BossType } from './types.ts';
 
 type Rect = { x: number; y: number; width: number; height: number };
 type Axis = 'h' | 'v' | 'd';
 type PatrolMeta = { vLines: number[]; hLines: number[]; obstacles: Rect[]; lastPoint?: Position; lastAxis?: Axis };
 
 export function createBoss(desks: Desk[]): Boss & PatrolMeta {
+  // Backward-compatible wrapper to maintain Phase 1 API while adopting config-driven boss
+  return createBossFromConfig(BOSS_CONFIGS[BossType.MANAGER], desks);
+}
+
+// Phase 2.1: Config-driven boss factory retaining Phase 1 pathing
+export function createBossFromConfig(config: BossConfig, desks: Desk[]): (Boss & PatrolMeta) {
   const { vLines, hLines } = computeWalkwayLines(desks);
   const obstacles: Rect[] = desks.map((d) => d.bounds);
   const start: Position = {
@@ -14,18 +21,23 @@ export function createBoss(desks: Desk[]): Boss & PatrolMeta {
   };
   const next = pickNextTarget(start, vLines, hLines, undefined, obstacles, undefined);
   const boss: Boss & PatrolMeta = {
-    id: 'boss-1',
+    id: `boss-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    type: config.type,
     position: { x: start.x, y: start.y },
-    speed: BOSS_SPEED,
+    speed: config.speed,
     patrolRoute: [start, next],
     currentTarget: 1,
-    detectionRadius: BOSS_DETECTION_RADIUS,
+    detectionRadius: config.detectionRadius,
     vLines,
     hLines,
     obstacles,
     lastPoint: start,
     lastAxis: undefined,
-  };
+    // Visual/scoring extensions for Phase 2
+    size: config.size,
+    color: config.color,
+    basePointsPerSecond: config.basePointsPerSecond,
+  } as unknown as Boss & PatrolMeta;
   return boss;
 }
 

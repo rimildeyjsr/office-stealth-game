@@ -10,7 +10,7 @@ export const GameCanvas: React.FC = () => {
   const stateRef = useRef<GameState>(createInitialState());
 
   // Input tracking
-  const inputRef = useRef({ up: false, down: false, left: false, right: false });
+  const inputRef = useRef({ up: false, down: false, left: false, right: false, interact: false as boolean | undefined, toggleMode: false as boolean | undefined });
   const togglePrevRef = useRef(false);
 
   // FPS debug
@@ -33,7 +33,7 @@ export const GameCanvas: React.FC = () => {
       if (code === 'KeyR') {
         // simple hard reset: reload stateRef and clear inputs
         stateRef.current = createInitialState();
-        inputRef.current = { up: false, down: false, left: false, right: false } as any;
+        inputRef.current = { up: false, down: false, left: false, right: false, interact: false, toggleMode: false } as any;
         togglePrevRef.current = false;
       }
     };
