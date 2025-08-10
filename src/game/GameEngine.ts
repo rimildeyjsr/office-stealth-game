@@ -9,6 +9,8 @@ export interface InputState {
   left: boolean;
   right: boolean;
   interact?: boolean; // E key; one-shot per press
+  toggleMode?: boolean; // Spacebar; one-shot per press
+  _toggleHandled?: boolean; // internal edge-detection flag
 }
 
 export function createInitialState(): GameState {
@@ -24,6 +26,7 @@ export function createInitialState(): GameState {
     score: 0,
     isGameOver: false,
     desks: createOfficeLayout(),
+    modeOverlayStartMs: null,
   };
 }
 
@@ -67,12 +70,16 @@ export function updateGameState(state: GameState, input: InputState): GameState 
 
   // Sitting logic: press E near seat anchor to sit (snap to anchor). Movement stands up.
   const playerDesk = state.desks.find((d) => d.isPlayerDesk) ?? null;
+  // Track current mode; may be overridden below when sitting
+  let gameMode = state.gameMode;
   if (!isSitting && input.interact && playerDesk) {
     const anchor = getPlayerSeatAnchor(playerDesk);
     if (isNearSeatAnchor(newPosition, anchor)) {
       isSitting = true;
       newPosition.x = anchor.x;
       newPosition.y = anchor.y;
+      // Requirement: default to working when transitioning from idle -> sit
+      gameMode = 'work';
     }
   }
   // If sitting, keep position anchored exactly at the seat anchor
@@ -82,6 +89,13 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     newPosition.y = anchor.y;
   }
 
+  // Mode switching: Only allowed when sitting at player desk (idle state cannot toggle)
+  if (input.toggleMode && !input._toggleHandled && isSitting) {
+    gameMode = gameMode === 'work' ? 'gaming' : 'work';
+    // mark as handled to ensure single toggle per key press
+    input._toggleHandled = true;
+  }
+
   return {
     ...state,
     player: {
@@ -89,6 +103,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
       position: newPosition,
       isSitting,
     },
+    gameMode,
   };
 }
 
@@ -123,9 +138,30 @@ export function drawFrame(ctx: CanvasRenderingContext2D, state: GameState, frame
     }
   }
 
-  // Draw player as blue square for Phase 1.1
-  ctx.fillStyle = state.player.isSitting ? '#10B981' : '#3B82F6'; // Sitting turns green
+  // Player color by state: idle (blue), working (green), gaming (red)
+  const isSittingNow = !!state.player.isSitting;
+  const isWorking = state.gameMode === 'work';
+  ctx.fillStyle = isSittingNow ? (isWorking ? '#10B981' : '#EF4444') : '#3B82F6';
   ctx.fillRect(state.player.position.x, state.player.position.y, PLAYER_SIZE, PLAYER_SIZE);
+
+  // State label top-left (IDLE/WORKING/GAMING). Apply 200ms fade only when switching modes (work<->gaming)
+  ctx.save();
+  const fadeMs = 200;
+  const now = performance.now();
+  let alpha = 1;
+  if (state.modeOverlayStartMs && now - state.modeOverlayStartMs < fadeMs && isSittingNow) {
+    alpha = 1 - (now - state.modeOverlayStartMs) / fadeMs;
+  }
+  ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = '20px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  const label = isSittingNow ? (isWorking ? 'WORKING' : 'GAMING') : 'IDLE';
+  ctx.fillText(label, 12, 12);
+  ctx.restore();
+
+  // 200ms fade overlay when mode changes handled outside (optional enhancement later)
 
   if (frameText) {
     ctx.fillStyle = '#FFFFFF';
