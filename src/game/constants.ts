@@ -6,4 +6,13 @@ export const CANVAS_HEIGHT = 600;
 export const PLAYER_SIZE = 20; // px square
 export const PLAYER_SPEED = 2; // px per frame
 
+// Office layout for Phase 1.2
+export const DESK_WIDTH = 140;
+export const DESK_HEIGHT = 80;
+export const DESK_ROWS = 2;
+export const DESK_COLS = 3;
+export const WALKWAY_X = 100; // horizontal spacing between desks
+export const WALKWAY_Y = 100; // vertical spacing between rows
+
+
 

@@ -3,7 +3,7 @@ import { CANVAS_HEIGHT, CANVAS_WIDTH } from '../game/constants.ts';
 import { createInitialState, drawFrame, updateGameState } from '../game/GameEngine.ts';
 import type { GameState } from '../game/types.ts';
 
-type Key = 'KeyW' | 'KeyA' | 'KeyS' | 'KeyD';
+type Key = 'KeyW' | 'KeyA' | 'KeyS' | 'KeyD' | 'KeyE';
 
 export const GameCanvas: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -23,6 +23,7 @@ export const GameCanvas: React.FC = () => {
       if (code === 'KeyS') inputRef.current.down = true;
       if (code === 'KeyA') inputRef.current.left = true;
       if (code === 'KeyD') inputRef.current.right = true;
+      if (code === 'KeyE') inputRef.current.interact = true;
     };
     const handleKeyUp = (e: KeyboardEvent) => {
       const code = e.code as Key | string;
@@ -30,6 +31,7 @@ export const GameCanvas: React.FC = () => {
       if (code === 'KeyS') inputRef.current.down = false;
       if (code === 'KeyA') inputRef.current.left = false;
       if (code === 'KeyD') inputRef.current.right = false;
+      if (code === 'KeyE') inputRef.current.interact = false;
     };
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
