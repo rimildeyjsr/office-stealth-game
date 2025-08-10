@@ -1,15 +1,18 @@
 import { BOSS_DETECTION_RADIUS, BOSS_SPEED, CANVAS_HEIGHT, CANVAS_WIDTH } from './constants.ts';
 import type { Boss, Desk, GameMode, Player, Position } from './types.ts';
 
-type PatrolMeta = { vLines: number[]; hLines: number[]; lastPoint?: Position; lastAxis?: 'h' | 'v' };
+type Rect = { x: number; y: number; width: number; height: number };
+type Axis = 'h' | 'v' | 'd';
+type PatrolMeta = { vLines: number[]; hLines: number[]; obstacles: Rect[]; lastPoint?: Position; lastAxis?: Axis };
 
 export function createBoss(desks: Desk[]): Boss & PatrolMeta {
   const { vLines, hLines } = computeWalkwayLines(desks);
+  const obstacles: Rect[] = desks.map((d) => d.bounds);
   const start: Position = {
     x: vLines[Math.floor(Math.random() * vLines.length)],
     y: hLines[Math.floor(Math.random() * hLines.length)],
   };
-  const next = pickNextTarget(start, vLines, hLines);
+  const next = pickNextTarget(start, vLines, hLines, undefined, obstacles, undefined);
   const boss: Boss & PatrolMeta = {
     id: 'boss-1',
     position: { x: start.x, y: start.y },
@@ -19,7 +22,9 @@ export function createBoss(desks: Desk[]): Boss & PatrolMeta {
     detectionRadius: BOSS_DETECTION_RADIUS,
     vLines,
     hLines,
+    obstacles,
     lastPoint: start,
+    lastAxis: undefined,
   };
   return boss;
 }
@@ -54,18 +59,91 @@ function computeWalkwayLines(desks: Desk[]): { vLines: number[]; hLines: number[
   return { vLines, hLines };
 }
 
-function pickNextTarget(from: Position, vLines: number[], hLines: number[], avoid?: Position): Position {
-  const chooseAxis = Math.random() < 0.5 ? 'h' : 'v';
-  if (chooseAxis === 'h') {
-    // move horizontally: keep y; pick different x
-    const candidates = vLines.filter((x) => x !== from.x).map((x) => ({ x, y: from.y }));
-    const filtered = avoid ? candidates.filter((p) => p.x !== avoid.x || p.y !== avoid.y) : candidates;
-    return filtered[Math.floor(Math.random() * filtered.length)] || candidates[0];
+function pickNextTarget(
+  from: Position,
+  vLines: number[],
+  hLines: number[],
+  avoid: Position | undefined,
+  obstacles: Rect[],
+  lastAxis: Axis | undefined,
+): Position {
+  // Build all grid intersections as candidate waypoints, excluding current
+  const allPoints: Position[] = [];
+  for (const x of vLines) {
+    for (const y of hLines) {
+      if (x === from.x && y === from.y) continue;
+      allPoints.push({ x, y });
+    }
   }
-  // move vertically: keep x; pick different y
-  const candidates = hLines.filter((y) => y !== from.y).map((y) => ({ x: from.x, y }));
-  const filtered = avoid ? candidates.filter((p) => p.x !== avoid.x || p.y !== avoid.y) : candidates;
-  return filtered[Math.floor(Math.random() * filtered.length)] || candidates[0];
+  // Filter out straight backtracking to last point
+  let candidates = avoid ? allPoints.filter((p) => p.x !== avoid.x || p.y !== avoid.y) : allPoints;
+
+  // Avoid segments that intersect any obstacle (desk)
+  candidates = candidates.filter((p) => !segmentIntersectsAny(from, p, obstacles));
+
+  if (candidates.length === 0) {
+    // Fallback to any different axis-aligned move
+    candidates = vLines.filter((x) => x !== from.x).map((x) => ({ x, y: from.y }))
+      .concat(hLines.filter((y) => y !== from.y).map((y) => ({ x: from.x, y })));
+  }
+  // Partition into diagonal vs straight moves
+  const diagonal = candidates.filter((p) => p.x !== from.x && p.y !== from.y);
+  const straightH = candidates.filter((p) => p.y === from.y && p.x !== from.x); // horizontal
+  const straightV = candidates.filter((p) => p.x === from.x && p.y !== from.y); // vertical
+  const straight = [...straightH, ...straightV];
+
+  // Prefer diagonals with 90% probability when available
+  const preferDiagonal = diagonal.length > 0 && Math.random() < 0.9;
+  let pool: Position[] = [];
+  if (preferDiagonal) {
+    pool = diagonal;
+  } else if (straight.length > 0) {
+    // When choosing straight, bias to switch axis relative to last move (stronger bias)
+    if (lastAxis === 'h' && straightV.length > 0 && Math.random() < 0.9) pool = straightV;
+    else if (lastAxis === 'v' && straightH.length > 0 && Math.random() < 0.9) pool = straightH;
+    else pool = straight;
+  } else {
+    pool = diagonal; // fallback
+  }
+
+  // Bias towards nearer points for faster switching: weight ~ 1/distance, pick best of top-K
+  const withDist = pool.map((p) => ({ p, d: Math.hypot(p.x - from.x, p.y - from.y) }));
+  withDist.sort((a, b) => a.d - b.d);
+  const topK = withDist.slice(0, Math.max(1, Math.min(3, withDist.length)));
+  const choice = topK[Math.floor(Math.random() * topK.length)];
+  return choice.p;
+}
+
+function pointInRect(p: Position, r: Rect): boolean {
+  return p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height;
+}
+
+function ccw(ax: number, ay: number, bx: number, by: number, cx: number, cy: number): boolean {
+  return (cy - ay) * (bx - ax) > (by - ay) * (cx - ax);
+}
+
+function segmentsIntersect(a: Position, b: Position, c: Position, d: Position): boolean {
+  return ccw(a.x, a.y, c.x, c.y, d.x, d.y) !== ccw(b.x, b.y, c.x, c.y, d.x, d.y) &&
+    ccw(a.x, a.y, b.x, b.y, c.x, c.y) !== ccw(a.x, a.y, b.x, b.y, d.x, d.y);
+}
+
+function segmentIntersectsRect(a: Position, b: Position, r: Rect): boolean {
+  if (pointInRect(a, r) || pointInRect(b, r)) return true;
+  const r1 = { x: r.x, y: r.y } as Position;
+  const r2 = { x: r.x + r.width, y: r.y } as Position;
+  const r3 = { x: r.x + r.width, y: r.y + r.height } as Position;
+  const r4 = { x: r.x, y: r.y + r.height } as Position;
+  return segmentsIntersect(a, b, r1, r2) ||
+    segmentsIntersect(a, b, r2, r3) ||
+    segmentsIntersect(a, b, r3, r4) ||
+    segmentsIntersect(a, b, r4, r1);
+}
+
+function segmentIntersectsAny(a: Position, b: Position, obstacles: Rect[]): boolean {
+  for (const r of obstacles) {
+    if (segmentIntersectsRect(a, b, r)) return true;
+  }
+  return false;
 }
 
 export function updateBoss(boss: Boss & PatrolMeta): Boss & PatrolMeta {
@@ -82,13 +160,19 @@ export function updateBoss(boss: Boss & PatrolMeta): Boss & PatrolMeta {
   // If close enough, snap and advance target
   if (Math.hypot(target.x - nextX, target.y - nextY) <= boss.speed) {
     const arrived: Position = { x: target.x, y: target.y };
-    const next = pickNextTarget(arrived, boss.vLines, boss.hLines, boss.lastPoint);
+    // Determine axis of last segment for axis switching bias
+    let lastAxis: Axis | undefined = 'd';
+    if (boss.position.x !== arrived.x && boss.position.y === arrived.y) lastAxis = 'h';
+    else if (boss.position.x === arrived.x && boss.position.y !== arrived.y) lastAxis = 'v';
+    else if (boss.position.x !== arrived.x && boss.position.y !== arrived.y) lastAxis = 'd';
+    const next = pickNextTarget(arrived, boss.vLines, boss.hLines, boss.lastPoint, boss.obstacles, lastAxis);
     return {
       ...boss,
       position: arrived,
       patrolRoute: [arrived, next],
       currentTarget: 1,
       lastPoint: boss.position,
+      lastAxis,
     };
   }
 
