@@ -13,9 +13,18 @@ export interface Player {
 
 export type GameMode = 'work' | 'gaming';
 
+export interface Boss {
+  id: string;
+  position: Position;
+  speed: number;
+  patrolRoute: Position[];
+  currentTarget: number;
+  detectionRadius: number;
+}
+
 export interface GameState {
   player: Player;
-  bosses: never[]; // Placeholder for later phases
+  bosses: Boss[];
   gameMode: GameMode;
   score: number;
   isGameOver: boolean;

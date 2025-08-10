@@ -14,5 +14,10 @@ export const DESK_COLS = 3;
 export const WALKWAY_X = 100; // horizontal spacing between desks
 export const WALKWAY_Y = 100; // vertical spacing between rows
 
+// Boss constants for Phase 1.4
+export const BOSS_SIZE = 30; // visual size (square) though detection is circular radius
+export const BOSS_SPEED = 1; // px per frame
+export const BOSS_DETECTION_RADIUS = 100; // px
+
 
 

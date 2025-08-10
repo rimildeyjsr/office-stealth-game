@@ -3,7 +3,7 @@ import { CANVAS_HEIGHT, CANVAS_WIDTH } from '../game/constants.ts';
 import { createInitialState, drawFrame, updateGameState } from '../game/GameEngine.ts';
 import type { GameState } from '../game/types.ts';
 
-type Key = 'KeyW' | 'KeyA' | 'KeyS' | 'KeyD' | 'KeyE' | 'Space';
+type Key = 'KeyW' | 'KeyA' | 'KeyS' | 'KeyD' | 'KeyE' | 'Space' | 'KeyR';
 
 export const GameCanvas: React.FC = () => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -29,6 +29,12 @@ export const GameCanvas: React.FC = () => {
       if (isSpace) {
         inputRef.current.toggleMode = true;
         e.preventDefault();
+      }
+      if (code === 'KeyR') {
+        // simple hard reset: reload stateRef and clear inputs
+        stateRef.current = createInitialState();
+        inputRef.current = { up: false, down: false, left: false, right: false } as any;
+        togglePrevRef.current = false;
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {

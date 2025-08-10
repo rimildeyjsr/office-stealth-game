@@ -1,7 +1,8 @@
-import { CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED } from './constants.ts';
+import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED } from './constants.ts';
 import type { GameState, Player } from './types.ts';
 import { createOfficeLayout, getPlayerSeatAnchor, isNearSeatAnchor } from './office.ts';
 import { checkCollision } from './collision.ts';
+import { createBoss, isPlayerDetected, updateBoss } from './boss.ts';
 
 export interface InputState {
   up: boolean;
@@ -21,7 +22,7 @@ export function createInitialState(): GameState {
 
   return {
     player,
-    bosses: [],
+    bosses: [createBoss(createOfficeLayout())],
     gameMode: 'work',
     score: 0,
     isGameOver: false,
@@ -96,6 +97,20 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     input._toggleHandled = true;
   }
 
+  // Update boss patrols
+  const nextBosses = state.bosses.map((b) => updateBoss(b as any));
+
+  // Detection → game over if gaming and within detection radius
+  let isGameOver = state.isGameOver;
+  if (!isGameOver) {
+    for (const boss of nextBosses) {
+      if (isPlayerDetected({ position: newPosition, speed: player.speed, isSitting }, boss, gameMode)) {
+        isGameOver = true;
+        break;
+      }
+    }
+  }
+
   return {
     ...state,
     player: {
@@ -104,6 +119,8 @@ export function updateGameState(state: GameState, input: InputState): GameState 
       isSitting,
     },
     gameMode,
+    bosses: nextBosses,
+    isGameOver,
   };
 }
 
@@ -136,6 +153,32 @@ export function drawFrame(ctx: CanvasRenderingContext2D, state: GameState, frame
       ctx.font = '12px sans-serif';
       ctx.fillText('E to Sit', anchor.x - 10, anchor.y - 6);
     }
+  }
+
+  // Draw boss and detection radius
+  for (const boss of state.bosses) {
+    // Detection circle
+    ctx.strokeStyle = 'rgba(239,68,68,0.25)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(boss.position.x, boss.position.y, boss.detectionRadius, 0, Math.PI * 2);
+    ctx.stroke();
+    // Boss square
+    ctx.fillStyle = '#EF4444';
+    ctx.fillRect(boss.position.x - BOSS_SIZE / 2, boss.position.y - BOSS_SIZE / 2, BOSS_SIZE, BOSS_SIZE);
+  }
+
+  // Game Over overlay
+  if (state.isGameOver) {
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = '36px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('CAUGHT!', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 - 20);
+    ctx.font = '18px sans-serif';
+    ctx.fillText('Press R to Restart', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 20);
   }
 
   // Player color by state: idle (blue), working (green), gaming (red)
