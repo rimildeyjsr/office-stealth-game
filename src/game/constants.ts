@@ -20,8 +20,9 @@ export const BOSS_SPEED = 1.6; // px per frame (faster)
 export const BOSS_DETECTION_RADIUS = 100; // px
 
 // Scoring
-export const POINTS_PER_SECOND = 5;
-export const SCORE_UPDATE_INTERVAL = 1000; // ms
+export const POINTS_PER_SECOND = 5; // reference rate
+export const POINTS_PER_TICK = 1; // increment amount per interval
+export const SCORE_UPDATE_INTERVAL = 50; // ms (1 point every 0.05s)
 
 
 

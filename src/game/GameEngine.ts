@@ -1,4 +1,4 @@
-import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, POINTS_PER_SECOND, SCORE_UPDATE_INTERVAL } from './constants.ts';
+import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, POINTS_PER_TICK, SCORE_UPDATE_INTERVAL } from './constants.ts';
 import type { GameState, Player } from './types.ts';
 import { createOfficeLayout, getPlayerSeatAnchor, isNearSeatAnchor } from './office.ts';
 import { checkCollision } from './collision.ts';
@@ -120,7 +120,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   if (!isGameOver && gameMode === 'gaming') {
     if (nowMs - lastScoreUpdateMs >= SCORE_UPDATE_INTERVAL) {
       const intervals = Math.floor((nowMs - lastScoreUpdateMs) / SCORE_UPDATE_INTERVAL);
-      nextScore += intervals * POINTS_PER_SECOND;
+      nextScore += intervals * POINTS_PER_TICK;
       lastScoreUpdateMs += intervals * SCORE_UPDATE_INTERVAL;
     }
   } else {
