@@ -30,6 +30,7 @@ export interface GameState {
   isGameOver: boolean;
   desks: Desk[];
   modeOverlayStartMs?: number | null; // for 200ms fade on mode switch
+  lastScoreUpdateMs?: number | null;
 }
 
 export interface Desk {

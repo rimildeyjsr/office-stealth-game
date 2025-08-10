@@ -1,4 +1,4 @@
-import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED } from './constants.ts';
+import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, POINTS_PER_SECOND, SCORE_UPDATE_INTERVAL } from './constants.ts';
 import type { GameState, Player } from './types.ts';
 import { createOfficeLayout, getPlayerSeatAnchor, isNearSeatAnchor } from './office.ts';
 import { checkCollision } from './collision.ts';
@@ -28,6 +28,8 @@ export function createInitialState(): GameState {
     isGameOver: false,
     desks: createOfficeLayout(),
     modeOverlayStartMs: null,
+    // Init to now so score intervals start immediate in gaming mode
+    lastScoreUpdateMs: performance.now(),
   };
 }
 
@@ -111,6 +113,20 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     }
   }
 
+  // Update score over time when gaming (5 points/sec)
+  let nextScore = state.score;
+  let lastScoreUpdateMs = state.lastScoreUpdateMs ?? performance.now();
+  const nowMs = performance.now();
+  if (!isGameOver && gameMode === 'gaming') {
+    if (nowMs - lastScoreUpdateMs >= SCORE_UPDATE_INTERVAL) {
+      const intervals = Math.floor((nowMs - lastScoreUpdateMs) / SCORE_UPDATE_INTERVAL);
+      nextScore += intervals * POINTS_PER_SECOND;
+      lastScoreUpdateMs += intervals * SCORE_UPDATE_INTERVAL;
+    }
+  } else {
+    lastScoreUpdateMs = nowMs;
+  }
+
   return {
     ...state,
     player: {
@@ -121,6 +137,8 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     gameMode,
     bosses: nextBosses,
     isGameOver,
+    score: nextScore,
+    lastScoreUpdateMs,
   };
 }
 
@@ -204,7 +222,12 @@ export function drawFrame(ctx: CanvasRenderingContext2D, state: GameState, frame
   ctx.fillText(label, 12, 12);
   ctx.restore();
 
-  // 200ms fade overlay when mode changes handled outside (optional enhancement later)
+  // Score (top-left under label)
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = '24px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(`Score: ${state.score}`, 12, 40);
 
   if (frameText) {
     ctx.fillStyle = '#FFFFFF';

@@ -19,5 +19,9 @@ export const BOSS_SIZE = 30; // visual size (square) though detection is circula
 export const BOSS_SPEED = 1.6; // px per frame (faster)
 export const BOSS_DETECTION_RADIUS = 100; // px
 
+// Scoring
+export const POINTS_PER_SECOND = 5;
+export const SCORE_UPDATE_INTERVAL = 1000; // ms
+
 
 
