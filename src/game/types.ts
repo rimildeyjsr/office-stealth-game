@@ -49,6 +49,19 @@ export interface Boss {
   basePointsPerSecond: number;
 }
 
+// Phase 2.3: Suspicion system types
+export interface SuspicionSystem {
+  current: number;
+  increaseRate: number; // points per second
+  decreaseRate: number; // points per second
+  maxSuspicion: number;
+  multiplierThresholds: Array<{
+    threshold: number;
+    multiplier: number;
+    label: string;
+  }>;
+}
+
 export interface GameState {
   player: Player;
   bosses: Boss[];
@@ -61,6 +74,9 @@ export interface GameState {
   // Phase 2.2: boss spawn scheduling
   nextBossSpawnMs?: number | null;
   activeBossDespawnMs?: number | null;
+  // Phase 2.3: suspicion state and timing
+  suspicion?: number; // 0-100
+  lastUpdateMs?: number | null;
 }
 
 export interface Desk {

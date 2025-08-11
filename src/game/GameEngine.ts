@@ -1,4 +1,4 @@
-import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, POINTS_PER_TICK, SCORE_UPDATE_INTERVAL, BOSS_CONFIGS } from './constants.ts';
+import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, POINTS_PER_TICK, SCORE_UPDATE_INTERVAL, BOSS_CONFIGS, SUSPICION_CONFIG } from './constants.ts';
 import type { GameState, Player } from './types.ts';
 import { createOfficeLayout, getPlayerSeatAnchor, isNearSeatAnchor } from './office.ts';
 import { checkCollision } from './collision.ts';
@@ -38,6 +38,8 @@ export function createInitialState(): GameState {
     lastScoreUpdateMs: now,
     nextBossSpawnMs: null,
     activeBossDespawnMs: now + getRandomDespawnDuration(BossType.MANAGER),
+    suspicion: 0,
+    lastUpdateMs: now,
   };
 }
 
@@ -125,6 +127,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   let nextScore = state.score;
   let lastScoreUpdateMs = state.lastScoreUpdateMs ?? performance.now();
   const nowMs = performance.now();
+  const deltaTimeMs = Math.max(0, (state.lastUpdateMs ? nowMs - state.lastUpdateMs : 16));
   if (!isGameOver && gameMode === 'gaming') {
     if (nowMs - lastScoreUpdateMs >= SCORE_UPDATE_INTERVAL) {
       const intervals = Math.floor((nowMs - lastScoreUpdateMs) / SCORE_UPDATE_INTERVAL);
@@ -163,6 +166,24 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     nextBossSpawnMs = null;
   }
 
+  // Phase 2.3: Suspicion update
+  const activeBoss = bossesOut[0] ?? null;
+  const deltaSeconds = deltaTimeMs / 1000;
+  let suspicion = state.suspicion ?? 0;
+  if (activeBoss) {
+    // Use current-frame player position so the meter responds immediately
+    const distance = Math.hypot(newPosition.x - activeBoss.position.x, newPosition.y - activeBoss.position.y);
+    const inDetection = distance <= activeBoss.detectionRadius;
+    if (inDetection) {
+      suspicion = Math.min(SUSPICION_CONFIG.maxSuspicion, suspicion + SUSPICION_CONFIG.increaseRate * deltaSeconds);
+    } else {
+      suspicion = Math.max(0, suspicion - SUSPICION_CONFIG.decreaseRate * deltaSeconds);
+    }
+  } else {
+    suspicion = Math.max(0, suspicion - SUSPICION_CONFIG.decreaseRate * deltaSeconds);
+  }
+  const suspicionGameOver = suspicion >= SUSPICION_CONFIG.maxSuspicion;
+
   return {
     ...state,
     player: {
@@ -172,11 +193,13 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     },
     gameMode,
     bosses: bossesOut,
-    isGameOver,
+    isGameOver: state.isGameOver || isGameOver || suspicionGameOver,
     score: nextScore,
     lastScoreUpdateMs,
     nextBossSpawnMs,
     activeBossDespawnMs,
+    suspicion,
+    lastUpdateMs: nowMs,
   };
 }
 
@@ -268,6 +291,30 @@ export function drawFrame(ctx: CanvasRenderingContext2D, state: GameState, frame
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.fillText(`Score: ${state.score}`, 12, 40);
+
+  // Phase 2.3: Suspicion meter (top-right)
+  const meterX = CANVAS_WIDTH - 220;
+  const meterY = 50;
+  const meterWidth = 200;
+  const meterHeight = 20;
+  const suspicion = Math.max(0, Math.min(100, state.suspicion ?? 0));
+  // Label above the bar
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = '14px monospace';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillText(`Suspicion: ${Math.round(suspicion)}%`, meterX, meterY);
+  const barY = meterY + 18; // place the bar below the text with small gap
+  // Background
+  ctx.fillStyle = '#333333';
+  ctx.fillRect(meterX, barY, meterWidth, meterHeight);
+  // Fill
+  const fillWidth = (suspicion / 100) * meterWidth;
+  if (suspicion < 26) ctx.fillStyle = '#00FF00';
+  else if (suspicion < 51) ctx.fillStyle = '#FFFF00';
+  else if (suspicion < 76) ctx.fillStyle = '#FF8C00';
+  else ctx.fillStyle = '#FF0000';
+  ctx.fillRect(meterX, barY, fillWidth, meterHeight);
 
   if (frameText) {
     ctx.fillStyle = '#FFFFFF';

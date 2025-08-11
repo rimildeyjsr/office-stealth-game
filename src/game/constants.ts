@@ -26,7 +26,7 @@ export const SCORE_UPDATE_INTERVAL = 50; // ms (1 point every 0.05s)
 
 // Phase 2.1: Boss hierarchy configs
 import { BossType } from './types.ts';
-import type { BossConfig } from './types.ts';
+import type { BossConfig, SuspicionSystem } from './types.ts';
 
 export const BOSS_CONFIGS: Record<BossType, BossConfig> = {
   [BossType.MANAGER]: {
@@ -69,6 +69,20 @@ export const BOSS_CONFIGS: Record<BossType, BossConfig> = {
     basePointsPerSecond: 200,
     spawnDelayMs: [15000, 35000],
   },
+};
+
+// Phase 2.3: Suspicion configuration
+export const SUSPICION_CONFIG: SuspicionSystem = {
+  current: 0,
+  increaseRate: 2,
+  decreaseRate: 1,
+  maxSuspicion: 100,
+  multiplierThresholds: [
+    { threshold: 0, multiplier: 1, label: 'SAFE' },
+    { threshold: 26, multiplier: 2, label: 'RISKY' },
+    { threshold: 51, multiplier: 3, label: 'DANGEROUS' },
+    { threshold: 76, multiplier: 5, label: 'CRITICAL' },
+  ],
 };
 
 
