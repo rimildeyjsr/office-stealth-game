@@ -1,7 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from '../game/constants.ts';
 import { createInitialState, drawFrame, updateGameState } from '../game/GameEngine.ts';
-import type { GameState } from '../game/types.ts';
+import type { Boss, Desk, GameState, Player } from '../game/types.ts';
+import { hasLineOfSight } from '../game/collision.ts';
 
 type Key = 'KeyW' | 'KeyA' | 'KeyS' | 'KeyD' | 'KeyE' | 'Space' | 'KeyR';
 
@@ -74,7 +75,13 @@ export const GameCanvas: React.FC = () => {
       if (stateRef.current.gameMode !== prevMode) {
         stateRef.current.modeOverlayStartMs = performance.now();
       }
+      // Draw base frame
       drawFrame(ctx, stateRef.current);
+      // Optional: LOS visualization
+      const boss = stateRef.current.bosses[0] as Boss | undefined;
+      if (boss && !stateRef.current.isGameOver) {
+        drawLineOfSight(ctx, boss, stateRef.current.player, stateRef.current.desks);
+      }
 
       // FPS meter: log once per second
       frameCountRef.current += 1;
@@ -100,5 +107,21 @@ export const GameCanvas: React.FC = () => {
 };
 
 export default GameCanvas;
+
+function drawLineOfSight(
+  ctx: CanvasRenderingContext2D,
+  boss: Boss,
+  player: Player,
+  desks: Desk[],
+) {
+  if (hasLineOfSight(boss, player, desks)) {
+    ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(boss.position.x, boss.position.y);
+    ctx.lineTo(player.position.x + 10, player.position.y + 10);
+    ctx.stroke();
+  }
+}
 
 

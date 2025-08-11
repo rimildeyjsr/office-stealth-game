@@ -1,7 +1,7 @@
-import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, POINTS_PER_TICK, SCORE_UPDATE_INTERVAL, BOSS_CONFIGS, SUSPICION_CONFIG } from './constants.ts';
+import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, POINTS_PER_TICK, SCORE_UPDATE_INTERVAL, BOSS_CONFIGS, SUSPICION_CONFIG, SUSPICION_MECHANICS } from './constants.ts';
 import type { GameState, Player } from './types.ts';
 import { createOfficeLayout, getPlayerSeatAnchor, isNearSeatAnchor } from './office.ts';
-import { checkCollision } from './collision.ts';
+import { checkCollision, hasLineOfSight } from './collision.ts';
 import { createBossFromConfig, getRandomDespawnDuration, getRandomSpawnDelay, isPlayerDetected, selectRandomBossType, updateBoss } from './boss.ts';
 import { BossType } from './types.ts';
 
@@ -166,21 +166,27 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     nextBossSpawnMs = null;
   }
 
-  // Phase 2.3: Suspicion update
+  // Phase 2.3: Suspicion update (hybrid mechanics)
   const activeBoss = bossesOut[0] ?? null;
-  const deltaSeconds = deltaTimeMs / 1000;
   let suspicion = state.suspicion ?? 0;
-  if (activeBoss) {
-    // Use current-frame player position so the meter responds immediately
-    const distance = Math.hypot(newPosition.x - activeBoss.position.x, newPosition.y - activeBoss.position.y);
-    const inDetection = distance <= activeBoss.detectionRadius;
-    if (inDetection) {
-      suspicion = Math.min(SUSPICION_CONFIG.maxSuspicion, suspicion + SUSPICION_CONFIG.increaseRate * deltaSeconds);
+  const playerNow: Player = { ...state.player, position: newPosition };
+  if (!activeBoss) {
+    suspicion = Math.max(0, suspicion - SUSPICION_MECHANICS.noRecoveryRate * (deltaTimeMs / 1000));
+  } else if (gameMode === 'work') {
+    suspicion = Math.max(0, suspicion - SUSPICION_MECHANICS.workingRecoveryRate * (deltaTimeMs / 1000));
+  } else if (gameMode === 'gaming') {
+    let suspicionRate = SUSPICION_MECHANICS.gamingHeatRate; // base heat
+    if (hasLineOfSight(activeBoss, playerNow, state.desks)) {
+      suspicionRate *= SUSPICION_MECHANICS.lineOfSightMultiplier;
+      const distance = Math.hypot(playerNow.position.x - activeBoss.position.x, playerNow.position.y - activeBoss.position.y);
+      if (distance <= SUSPICION_MECHANICS.dangerZoneDistance) {
+        suspicionRate *= SUSPICION_MECHANICS.dangerZoneMultiplier;
+      }
+      suspicion = Math.min(SUSPICION_CONFIG.maxSuspicion, suspicion + suspicionRate * (deltaTimeMs / 1000));
     } else {
-      suspicion = Math.max(0, suspicion - SUSPICION_CONFIG.decreaseRate * deltaSeconds);
+      // Hidden while gaming: slow recovery
+      suspicion = Math.max(0, suspicion - SUSPICION_MECHANICS.hiddenRecoveryRate * (deltaTimeMs / 1000));
     }
-  } else {
-    suspicion = Math.max(0, suspicion - SUSPICION_CONFIG.decreaseRate * deltaSeconds);
   }
   const suspicionGameOver = suspicion >= SUSPICION_CONFIG.maxSuspicion;
 

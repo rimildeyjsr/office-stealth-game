@@ -85,5 +85,16 @@ export const SUSPICION_CONFIG: SuspicionSystem = {
   ],
 };
 
+// Phase 2.3: Hybrid suspicion mechanics
+export const SUSPICION_MECHANICS = {
+  gamingHeatRate: 0.5,
+  lineOfSightMultiplier: 6,
+  dangerZoneDistance: 80,
+  dangerZoneMultiplier: 2,
+  workingRecoveryRate: 2.5,
+  hiddenRecoveryRate: 1.0,
+  noRecoveryRate: 0.5,
+} as const;
+
 
 
