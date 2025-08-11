@@ -82,6 +82,10 @@ export interface GameState {
   // Phase 2.5: warning system
   bossWarning?: BossWarning | null;
   upcomingBossType?: BossType | null;
+  // Phase 3.1: coworker system state
+  coworkers: Coworker[];
+  nextCoworkerSpawnMs?: number | null;
+  coworkerWarnings?: CoworkerWarning[];
 }
 
 // Phase 2.5: warning interface
@@ -96,6 +100,51 @@ export interface Desk {
   id: string;
   bounds: { x: number; y: number; width: number; height: number };
   isPlayerDesk: boolean;
+}
+
+
+// Phase 3.1: Coworker foundations
+export const CoworkerType = {
+  HELPFUL: 'helpful',
+  SNITCH: 'snitch',
+  GOSSIP: 'gossip',
+  DISTRACTION: 'distraction',
+} as const;
+export type CoworkerType = typeof CoworkerType[keyof typeof CoworkerType];
+
+export interface CoworkerConfig {
+  type: CoworkerType;
+  color: string;
+  size: number;
+  speed: number;
+  spawnProbability: number;
+  actionCooldownMs: number;
+  effectDurationMs: number;
+}
+
+export interface Coworker {
+  id: string;
+  type: CoworkerType;
+  position: Position;
+  speed: number;
+  patrolRoute: Position[];
+  currentTarget: number;
+  size: number;
+  color: string;
+  lastActionMs: number;
+  isActive: boolean;
+  // Internal scheduling (Phase 3.1): when to despawn; optional to keep spec flexible
+  despawnAtMs?: number | null;
+}
+
+// Phase 3.2 forward-declared to keep GameState shape ready
+export interface CoworkerWarning {
+  coworkerId: string;
+  type: 'boss_warning' | 'snitch_warning' | string;
+  message: string;
+  position: Position;
+  remainingMs: number;
+  scoreReduction: number;
 }
 
 

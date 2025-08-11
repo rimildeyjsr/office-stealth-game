@@ -1,9 +1,10 @@
-import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, BOSS_CONFIGS, SUSPICION_CONFIG, SUSPICION_MECHANICS } from './constants.ts';
-import type { Boss, Desk, GameMode, GameState, Player } from './types.ts';
+import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, BOSS_CONFIGS, SUSPICION_CONFIG, SUSPICION_MECHANICS, COWORKER_SYSTEM } from './constants.ts';
+import type { Boss, Coworker, Desk, GameMode, GameState, Player } from './types.ts';
 import { createOfficeLayout, getPlayerSeatAnchor, isNearSeatAnchor } from './office.ts';
 import { checkCollision, hasLineOfSight } from './collision.ts';
 import { createBossFromConfig, getRandomDespawnDuration, getRandomSpawnDelay, isPlayerDetected, selectRandomBossType, updateBoss } from './boss.ts';
 import { BossType } from './types.ts';
+import { createCoworkerFromConfig, getRandomCoworkerSpawnDelay, updateCoworker, pickRandomCoworkerConfig } from './coworker.ts';
 
 export interface InputState {
   up: boolean;
@@ -42,6 +43,10 @@ export function createInitialState(): GameState {
     lastUpdateMs: now,
     bossWarning: null,
     upcomingBossType: null,
+    // Coworkers start empty; schedule initial spawn timer
+    coworkers: [],
+    nextCoworkerSpawnMs: now + getRandomCoworkerSpawnDelay(),
+    coworkerWarnings: [],
   };
 }
 
@@ -279,6 +284,28 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   }
   const suspicionGameOver = suspicion >= SUSPICION_CONFIG.maxSuspicion;
 
+  // Phase 3.1: Coworker updates and scheduling
+  // Update coworkers movement
+  let coworkers: Coworker[] = (state.coworkers ?? []).map((c) => updateCoworker(c, state.desks));
+  // Despawn coworkers whose timer elapsed
+  coworkers = coworkers.filter((c) => (c.despawnAtMs == null ? true : nowMs < c.despawnAtMs));
+  // Limit max active coworkers
+  if (coworkers.length > COWORKER_SYSTEM.maxActiveCoworkers) {
+    coworkers = coworkers.slice(0, COWORKER_SYSTEM.maxActiveCoworkers);
+  }
+  // Spawn new coworker when timer elapses and under max
+  let nextCoworkerSpawnMs = state.nextCoworkerSpawnMs ?? null;
+  if (nextCoworkerSpawnMs !== null && nowMs >= nextCoworkerSpawnMs && coworkers.length < COWORKER_SYSTEM.maxActiveCoworkers) {
+    const cfg = pickRandomCoworkerConfig();
+    const newCoworker = createCoworkerFromConfig(cfg, state.desks);
+    coworkers = [...coworkers, newCoworker];
+    nextCoworkerSpawnMs = nowMs + getRandomCoworkerSpawnDelay();
+  }
+  // If we have no timer, schedule one
+  if (nextCoworkerSpawnMs === null) {
+    nextCoworkerSpawnMs = nowMs + getRandomCoworkerSpawnDelay();
+  }
+
   return {
     ...state,
     player: {
@@ -297,6 +324,8 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     lastUpdateMs: nowMs,
     bossWarning,
     upcomingBossType,
+    coworkers,
+    nextCoworkerSpawnMs,
   };
 }
 
@@ -344,6 +373,13 @@ export function drawFrame(ctx: CanvasRenderingContext2D, state: GameState, frame
     const visualColor = boss.color ?? '#EF4444';
     ctx.fillStyle = visualColor;
     ctx.fillRect(boss.position.x - visualSize / 2, boss.position.y - visualSize / 2, visualSize, visualSize);
+  }
+
+  // Draw coworkers (below player, above desks)
+  for (const coworker of state.coworkers ?? []) {
+    const size = coworker.size;
+    ctx.fillStyle = coworker.color;
+    ctx.fillRect(coworker.position.x - size / 2, coworker.position.y - size / 2, size, size);
   }
 
   // Game Over overlay

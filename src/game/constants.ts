@@ -25,8 +25,8 @@ export const POINTS_PER_TICK = 1; // increment amount per interval
 export const SCORE_UPDATE_INTERVAL = 50; // ms (1 point every 0.05s)
 
 // Phase 2.1: Boss hierarchy configs
-import { BossType } from './types.ts';
-import type { BossConfig, SuspicionSystem } from './types.ts';
+import { BossType, CoworkerType } from './types.ts';
+import type { BossConfig, CoworkerConfig, SuspicionSystem } from './types.ts';
 
 export const BOSS_CONFIGS: Record<BossType, BossConfig> = {
   [BossType.MANAGER]: {
@@ -110,6 +110,52 @@ export const WARNING_CONFIG = {
     medium: '#FF8C00',
     high: '#FF0000',
   },
+} as const;
+
+// Phase 3.1: Coworker configuration
+export const COWORKER_CONFIGS: Record<CoworkerType, CoworkerConfig> = {
+  [CoworkerType.HELPFUL]: {
+    type: CoworkerType.HELPFUL,
+    color: '#00FF00',
+    size: 18,
+    speed: 1.2,
+    spawnProbability: 0.4,
+    actionCooldownMs: 15000,
+    effectDurationMs: 3000,
+  },
+  [CoworkerType.SNITCH]: {
+    type: CoworkerType.SNITCH,
+    color: '#FFA500',
+    size: 16,
+    speed: 1.4,
+    spawnProbability: 0.25,
+    actionCooldownMs: 30000,
+    effectDurationMs: 1000,
+  },
+  [CoworkerType.GOSSIP]: {
+    type: CoworkerType.GOSSIP,
+    color: '#FF69B4',
+    size: 16,
+    speed: 1.1,
+    spawnProbability: 0.2,
+    actionCooldownMs: 25000,
+    effectDurationMs: 2000,
+  },
+  [CoworkerType.DISTRACTION]: {
+    type: CoworkerType.DISTRACTION,
+    color: '#1E90FF',
+    size: 20,
+    speed: 1.0,
+    spawnProbability: 0.15,
+    actionCooldownMs: 20000,
+    effectDurationMs: 3000,
+  },
+};
+
+export const COWORKER_SYSTEM = {
+  maxActiveCoworkers: 3,
+  spawnDelayMs: [8000, 20000] as [number, number],
+  despawnDurationMs: [15000, 30000] as [number, number],
 } as const;
 
 
