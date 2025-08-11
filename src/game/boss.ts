@@ -4,7 +4,7 @@ import { BossType } from './types.ts';
 
 type Rect = { x: number; y: number; width: number; height: number };
 type Axis = 'h' | 'v' | 'd';
-type PatrolMeta = { vLines: number[]; hLines: number[]; obstacles: Rect[]; lastPoint?: Position; lastAxis?: Axis };
+type PatrolMeta = { vLines: number[]; hLines: number[]; obstacles: Rect[]; lastPoint?: Position; lastAxis?: Axis; biasTarget?: Position | null };
 
 export function createBoss(desks: Desk[]): Boss & PatrolMeta {
   // Backward-compatible wrapper to maintain Phase 1 API while adopting config-driven boss
@@ -33,6 +33,7 @@ export function createBossFromConfig(config: BossConfig, desks: Desk[]): (Boss &
     obstacles,
     lastPoint: start,
     lastAxis: undefined,
+    biasTarget: null,
     // Visual/scoring extensions for Phase 2
     size: config.size,
     color: config.color,
@@ -78,6 +79,7 @@ function pickNextTarget(
   avoid: Position | undefined,
   obstacles: Rect[],
   lastAxis: Axis | undefined,
+  biasTarget?: Position | null,
 ): Position {
   // Build all grid intersections as candidate waypoints, excluding current
   const allPoints: Position[] = [];
@@ -118,10 +120,15 @@ function pickNextTarget(
     pool = diagonal; // fallback
   }
 
-  // Bias towards nearer points for faster switching: weight ~ 1/distance, pick best of top-K
-  const withDist = pool.map((p) => ({ p, d: Math.hypot(p.x - from.x, p.y - from.y) }));
-  withDist.sort((a, b) => a.d - b.d);
-  const topK = withDist.slice(0, Math.max(1, Math.min(3, withDist.length)));
+  // Selection: if a bias target is provided, prioritize points closer to it; otherwise favor near to 'from'
+  const scored = pool.map((p) => {
+    const dFrom = Math.hypot(p.x - from.x, p.y - from.y);
+    const dBias = biasTarget ? Math.hypot(p.x - (biasTarget as Position).x, p.y - (biasTarget as Position).y) : dFrom;
+    const score = biasTarget ? dBias : dFrom;
+    return { p, d: score };
+  });
+  scored.sort((a, b) => a.d - b.d);
+  const topK = scored.slice(0, Math.max(1, Math.min(3, scored.length)));
   const choice = topK[Math.floor(Math.random() * topK.length)];
   return choice.p;
 }
@@ -177,7 +184,7 @@ export function updateBoss(boss: Boss & PatrolMeta): Boss & PatrolMeta {
     if (boss.position.x !== arrived.x && boss.position.y === arrived.y) lastAxis = 'h';
     else if (boss.position.x === arrived.x && boss.position.y !== arrived.y) lastAxis = 'v';
     else if (boss.position.x !== arrived.x && boss.position.y !== arrived.y) lastAxis = 'd';
-    const next = pickNextTarget(arrived, boss.vLines, boss.hLines, boss.lastPoint, boss.obstacles, lastAxis);
+    const next = pickNextTarget(arrived, boss.vLines, boss.hLines, boss.lastPoint, boss.obstacles, lastAxis, boss.biasTarget);
     return {
       ...boss,
       position: arrived,
@@ -185,6 +192,8 @@ export function updateBoss(boss: Boss & PatrolMeta): Boss & PatrolMeta {
       currentTarget: 1,
       lastPoint: boss.position,
       lastAxis,
+      // consume bias once applied so we decide each segment independently
+      biasTarget: null,
     };
   }
 

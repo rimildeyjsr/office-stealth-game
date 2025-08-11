@@ -1,4 +1,4 @@
-import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, BOSS_CONFIGS, SUSPICION_CONFIG, SUSPICION_MECHANICS, COWORKER_SYSTEM, COWORKER_CONFIGS } from './constants.ts';
+import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, BOSS_CONFIGS, SUSPICION_CONFIG, SUSPICION_MECHANICS, COWORKER_SYSTEM, COWORKER_CONFIGS, BOSS_UX } from './constants.ts';
 import type { Boss, Coworker, Desk, GameMode, GameState, Player } from './types.ts';
 import { createOfficeLayout, getPlayerSeatAnchor, isNearSeatAnchor } from './office.ts';
 import { checkCollision, hasLineOfSight } from './collision.ts';
@@ -43,6 +43,9 @@ export function createInitialState(): GameState {
     lastUpdateMs: now,
     bossWarning: null,
     upcomingBossType: null,
+    bossShouts: [],
+    nextBossShoutCheckMs: now + BOSS_UX.shoutCheckMs,
+    nextBossSpawnIsSnitch: null,
     // Coworkers start empty; schedule initial spawn timer
     coworkers: [],
     nextCoworkerSpawnMs: now + getRandomCoworkerSpawnDelay(),
@@ -207,6 +210,8 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   let bossesOut = nextBosses;
   let nextBossSpawnMs = state.nextBossSpawnMs ?? null;
   let activeBossDespawnMs = state.activeBossDespawnMs ?? null;
+  let nextBossSpawnIsSnitch = state.nextBossSpawnIsSnitch ?? null;
+  let justSpawnedFromSnitch = false;
   // Spawn when timer elapses and no active boss
   if (bossesOut.length === 0 && nextBossSpawnMs !== null && nowMs >= nextBossSpawnMs) {
     const bossType = state.upcomingBossType ?? selectRandomBossType();
@@ -217,6 +222,10 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     // Clear warning on spawn
     state.bossWarning = null;
     state.upcomingBossType = null;
+    if (nextBossSpawnIsSnitch) {
+      justSpawnedFromSnitch = true;
+      nextBossSpawnIsSnitch = null;
+    }
   }
   // If no boss and no timer, schedule next spawn using Manager delay for now
   if (bossesOut.length === 0 && nextBossSpawnMs === null) {
@@ -288,6 +297,10 @@ export function updateGameState(state: GameState, input: InputState): GameState 
       // Hidden while gaming: slow recovery
       suspicion = Math.max(0, suspicion - SUSPICION_MECHANICS.hiddenRecoveryRate * (deltaTimeMs / 1000));
     }
+  }
+  // Spike suspicion if boss just spawned due to a snitch call
+  if (justSpawnedFromSnitch) {
+    suspicion = Math.max(suspicion, BOSS_UX.snitchSpawnSuspicion);
   }
   const suspicionGameOver = suspicion >= SUSPICION_CONFIG.maxSuspicion;
 
@@ -376,6 +389,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
           // Only affect if no active boss; if boss already present, still update nextBossSpawnMs
           nextBossSpawnMs = now + reducedDelay;
           upcomingBossType = selectRandomBossType();
+          nextBossSpawnIsSnitch = true;
           // Visual warning center-top for 1s
           coworkerWarnings.push({
             coworkerId: snitch.id,
@@ -396,6 +410,41 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     // Not gaming → pause checks until next gaming window
     // Or when boss is already incoming: delay checks slightly
     nextSnitchCheckMs = bossIncomingSoon ? nowMs + 5000 : null;
+  }
+
+  // Phase 3.4: Boss shout checks and biasing toward player desk when suspicion is high
+  let bossShouts = [...(state.bossShouts ?? [])];
+  let nextBossShoutCheckMs = state.nextBossShoutCheckMs ?? null;
+  // Decrement and prune shouts
+  bossShouts = bossShouts
+    .map((s) => ({ ...s, remainingMs: s.remainingMs - deltaTimeMs }))
+    .filter((s) => s.remainingMs > 0);
+  if (nextBossShoutCheckMs == null) nextBossShoutCheckMs = nowMs + BOSS_UX.shoutCheckMs;
+  if (nowMs >= nextBossShoutCheckMs) {
+    for (const b of bossesOut) {
+      if (Math.random() < BOSS_UX.shoutChance) {
+        const msg = BOSS_UX.shouts[Math.floor(Math.random() * BOSS_UX.shouts.length)] || 'Get back to work!';
+        bossShouts.push({
+          bossId: b.id,
+          message: msg,
+          position: { x: b.position.x, y: b.position.y - (b.size ?? BOSS_SIZE) - 10 },
+          remainingMs: BOSS_UX.shoutDurationMs,
+        });
+      }
+    }
+    nextBossShoutCheckMs = nowMs + BOSS_UX.shoutCheckMs;
+  }
+  // Bias boss pathing toward the player's desk when suspicion is high
+  if ((suspicion ?? 0) >= BOSS_UX.biasThreshold && bossesOut.length > 0) {
+    const pd = state.desks.find((d) => d.isPlayerDesk) ?? null;
+    if (pd) {
+      const center = { x: pd.bounds.x + pd.bounds.width / 2, y: pd.bounds.y + pd.bounds.height / 2 };
+      for (const b of bossesOut as any[]) {
+        if (Math.random() < BOSS_UX.biasChancePerRetarget) {
+          b.biasTarget = center;
+        }
+      }
+    }
   }
 
   return {
@@ -420,6 +469,9 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     nextCoworkerSpawnMs,
     coworkerWarnings,
     nextSnitchCheckMs: state.nextSnitchCheckMs ?? null,
+    bossShouts,
+    nextBossShoutCheckMs,
+    nextBossSpawnIsSnitch,
   };
 }
 
@@ -467,6 +519,31 @@ export function drawFrame(ctx: CanvasRenderingContext2D, state: GameState, frame
     const visualColor = boss.color ?? '#EF4444';
     ctx.fillStyle = visualColor;
     ctx.fillRect(boss.position.x - visualSize / 2, boss.position.y - visualSize / 2, visualSize, visualSize);
+  }
+
+  // Draw boss shouts (speech bubbles)
+  for (const shout of state.bossShouts ?? []) {
+    const alpha = Math.max(0.2, Math.min(1, shout.remainingMs / BOSS_UX.shoutDurationMs));
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2;
+    const text = shout.message;
+    ctx.font = '12px sans-serif';
+    const padding = 6;
+    const textWidth = ctx.measureText(text).width;
+    const width = textWidth + padding * 2;
+    const height = 20;
+    const x = shout.position.x - width / 2;
+    const y = shout.position.y - height;
+    ctx.fillRect(x, y, width, height);
+    ctx.strokeRect(x, y, width, height);
+    ctx.fillStyle = '#000000';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, shout.position.x, shout.position.y - height / 2);
+    ctx.restore();
   }
 
   // Draw coworkers (below player, above desks)

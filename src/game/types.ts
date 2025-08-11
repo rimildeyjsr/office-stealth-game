@@ -82,6 +82,10 @@ export interface GameState {
   // Phase 2.5: warning system
   bossWarning?: BossWarning | null;
   upcomingBossType?: BossType | null;
+  // Phase 3.4: boss UX shouts and snitch-trigger tracking
+  bossShouts?: BossShout[];
+  nextBossShoutCheckMs?: number | null;
+  nextBossSpawnIsSnitch?: boolean | null;
   // Phase 3.1: coworker system state
   coworkers: Coworker[];
   nextCoworkerSpawnMs?: number | null;
@@ -152,6 +156,14 @@ export interface CoworkerWarning {
   position: Position;
   remainingMs: number;
   scoreReduction: number;
+}
+
+// Phase 3.4: Boss shout UX model
+export interface BossShout {
+  bossId: string;
+  message: string;
+  position: Position;
+  remainingMs: number;
 }
 
 

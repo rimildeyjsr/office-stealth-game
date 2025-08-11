@@ -161,5 +161,27 @@ export const COWORKER_SYSTEM = {
   snitchBiasChancePerFrame: 0.03,
 } as const;
 
+// Phase 3.4: Boss UX / behavior tuning
+export const BOSS_UX = {
+  // Chance per check interval to shout (per active boss)
+  shoutChance: 0.25,
+  // Interval between shout checks
+  shoutCheckMs: 4000,
+  // How long a shout bubble stays on screen
+  shoutDurationMs: 1200,
+  // Possible shout lines
+  shouts: [
+    'Get back to work!',
+    'No slacking!',
+    'I better see progress!',
+  ],
+  // Suspicion spike when a boss is spawned by a snitch call
+  snitchSpawnSuspicion: 50,
+  // Suspicion threshold to bias boss toward player desk
+  biasThreshold: 30,
+  // Probability when above threshold to bias next waypoint toward player desk area
+  biasChancePerRetarget: 0.6,
+} as const;
+
 
 
