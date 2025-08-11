@@ -1,5 +1,5 @@
-import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, POINTS_PER_TICK, SCORE_UPDATE_INTERVAL, BOSS_CONFIGS, SUSPICION_CONFIG, SUSPICION_MECHANICS } from './constants.ts';
-import type { GameState, Player } from './types.ts';
+import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, BOSS_CONFIGS, SUSPICION_CONFIG, SUSPICION_MECHANICS } from './constants.ts';
+import type { Boss, Desk, GameMode, GameState, Player } from './types.ts';
 import { createOfficeLayout, getPlayerSeatAnchor, isNearSeatAnchor } from './office.ts';
 import { checkCollision, hasLineOfSight } from './collision.ts';
 import { createBossFromConfig, getRandomDespawnDuration, getRandomSpawnDelay, isPlayerDetected, selectRandomBossType, updateBoss } from './boss.ts';
@@ -41,6 +41,61 @@ export function createInitialState(): GameState {
     suspicion: 0,
     lastUpdateMs: now,
   };
+}
+
+// Phase 2.4: Dynamic multiplier based on suspicion and active risk
+export function calculateDynamicMultiplier(
+  suspicion: number,
+  boss: Boss | null,
+  player: Player,
+  gameMode: GameMode,
+  desks: Desk[],
+): { totalMultiplier: number; baseMultiplier: number; riskMultiplier: number; riskLevel: string } {
+  if (gameMode !== 'gaming' || !boss) {
+    return { totalMultiplier: 1, baseMultiplier: 1, riskMultiplier: 1, riskLevel: 'SAFE' };
+  }
+
+  // Base multiplier: every 10% suspicion adds +1x, capped at 10x
+  // 0-9% -> 1x, 10-19% -> 2x, ..., 90-100% -> 10x
+  let baseMultiplier = Math.floor(suspicion / 10) + 1;
+  if (baseMultiplier > 10) baseMultiplier = 10;
+
+  let riskMultiplier = 1;
+  let riskLevel = 'SAFE';
+
+  const distance = Math.hypot(player.position.x - boss.position.x, player.position.y - boss.position.y);
+  const hasLOS = hasLineOfSight(boss, player, desks);
+
+  if (hasLOS && distance <= SUSPICION_MECHANICS.dangerZoneDistance) {
+    riskMultiplier = 3; // Extreme danger
+    riskLevel = 'EXTREME DANGER';
+  } else if (hasLOS) {
+    riskMultiplier = 2; // Visible
+    riskLevel = 'VISIBLE';
+  } else if (distance <= 120) {
+    riskMultiplier = 1.5; // Hidden but close
+    riskLevel = 'HIDDEN';
+  } else {
+    riskMultiplier = 1; // Safe
+    riskLevel = 'SAFE';
+  }
+
+  return { totalMultiplier: baseMultiplier * riskMultiplier, baseMultiplier, riskMultiplier, riskLevel };
+}
+
+export function calculateScoreIncrease(
+  gameMode: string,
+  boss: Boss | null,
+  player: Player,
+  suspicion: number,
+  desks: Desk[],
+  deltaTimeMs: number,
+): number {
+  if (gameMode !== 'gaming' || !boss) return 0;
+  const deltaSeconds = deltaTimeMs / 1000;
+  const { totalMultiplier } = calculateDynamicMultiplier(suspicion, boss, player, gameMode as GameMode, desks);
+  const basePointsPerSecond = boss.basePointsPerSecond;
+  return basePointsPerSecond * totalMultiplier * deltaSeconds;
 }
 
 export function updateGameState(state: GameState, input: InputState): GameState {
@@ -123,20 +178,16 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     }
   }
 
-  // Update score over time when gaming (5 points/sec)
+  // Update score using dynamic multiplier only when boss is present and gaming
   let nextScore = state.score;
   let lastScoreUpdateMs = state.lastScoreUpdateMs ?? performance.now();
   const nowMs = performance.now();
   const deltaTimeMs = Math.max(0, (state.lastUpdateMs ? nowMs - state.lastUpdateMs : 16));
-  if (!isGameOver && gameMode === 'gaming') {
-    if (nowMs - lastScoreUpdateMs >= SCORE_UPDATE_INTERVAL) {
-      const intervals = Math.floor((nowMs - lastScoreUpdateMs) / SCORE_UPDATE_INTERVAL);
-      nextScore += intervals * POINTS_PER_TICK;
-      lastScoreUpdateMs += intervals * SCORE_UPDATE_INTERVAL;
-    }
-  } else {
-    lastScoreUpdateMs = nowMs;
+  if (!isGameOver && gameMode === 'gaming' && state.bosses.length > 0) {
+    const boss = state.bosses[0];
+    nextScore += calculateScoreIncrease(gameMode, boss, { ...player, position: newPosition }, state.suspicion ?? 0, state.desks, deltaTimeMs);
   }
+  lastScoreUpdateMs = nowMs;
 
   // Phase 2.2: Boss spawning logic (single active boss)
   let bossesOut = nextBosses;
@@ -291,12 +342,7 @@ export function drawFrame(ctx: CanvasRenderingContext2D, state: GameState, frame
   ctx.fillText(label, 12, 12);
   ctx.restore();
 
-  // Score (top-left under label)
-  ctx.fillStyle = '#FFFFFF';
-  ctx.font = '24px sans-serif';
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillText(`Score: ${state.score}`, 12, 40);
+  // Score display moved to GameCanvas overlay
 
   // Phase 2.3: Suspicion meter (top-right)
   const meterX = CANVAS_WIDTH - 220;
