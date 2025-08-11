@@ -102,6 +102,19 @@ function findNearestIntersection(vLines: number[], hLines: number[], pos: Positi
   return best;
 }
 
+// Ensure the next waypoint is axis-aligned relative to the current position when possible
+// Returns a straight-line alternative that does not intersect obstacles; otherwise returns the original target
+function coerceToStraightTarget(from: Position, to: Position, obstacles: Rect[]): Position {
+  if (from.x === to.x || from.y === to.y) return to;
+  const cand1: Position = { x: from.x, y: to.y }; // vertical move
+  const cand2: Position = { x: to.x, y: from.y }; // horizontal move
+  const options: Position[] = [];
+  if (!segmentIntersectsAny(from, cand1, obstacles)) options.push(cand1);
+  if (!segmentIntersectsAny(from, cand2, obstacles)) options.push(cand2);
+  if (options.length === 0) return to;
+  return options[Math.floor(Math.random() * options.length)];
+}
+
 export function createCoworkerFromConfig(config: CoworkerConfig, desks: Desk[], spawnHint?: Position): Coworker {
   const { vLines, hLines } = computeWalkwayLines(desks, Math.ceil(config.size / 2));
   const obstacles: Rect[] = desks.map((d) => d.bounds);
@@ -109,7 +122,11 @@ export function createCoworkerFromConfig(config: CoworkerConfig, desks: Desk[], 
     x: vLines[Math.floor(Math.random() * vLines.length)],
     y: hLines[Math.floor(Math.random() * hLines.length)],
   };
-  const next = pickNextTarget(start, vLines, hLines, obstacles, Math.ceil(config.size / 2));
+  let next = pickNextTarget(start, vLines, hLines, obstacles, Math.ceil(config.size / 2));
+  // Snitches should move only in straight lines between intersections
+  if (config.type === CoworkerType.SNITCH) {
+    next = coerceToStraightTarget(start, next, obstacles);
+  }
   const lifespan = getRandomCoworkerDespawnDuration();
   return {
     id: `coworker-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -157,7 +174,10 @@ export function updateCoworker(coworker: Coworker, desks: Desk[]): Coworker {
     const { vLines, hLines } = computeWalkwayLines(desks, Math.ceil(coworker.size / 2));
     const obstacles: Rect[] = desks.map((d) => d.bounds);
     const arrived: Position = { x: target.x, y: target.y };
-    const next = coworker.rushTarget ? arrived : pickNextTarget(arrived, vLines, hLines, obstacles, Math.ceil(coworker.size / 2));
+    let next = coworker.rushTarget ? arrived : pickNextTarget(arrived, vLines, hLines, obstacles, Math.ceil(coworker.size / 2));
+    if (!coworker.rushTarget && coworker.type === CoworkerType.SNITCH) {
+      next = coerceToStraightTarget(arrived, next, obstacles);
+    }
     return {
       ...coworker,
       position: arrived,
@@ -290,7 +310,9 @@ export function maybeBiasSnitchTowardPlayer(
   // With small per-frame chance, retarget next waypoint toward the nearest walkway point to the player
   if (Math.random() < (COWORKER_SYSTEM as any).snitchBiasChancePerFrame) {
     const { vLines, hLines } = computeWalkwayLines(desks);
-    const target = findNearestIntersection(vLines, hLines, player.position);
+    const obstacles: Rect[] = desks.map((d) => d.bounds);
+    const targetRaw = findNearestIntersection(vLines, hLines, player.position);
+    const target = coerceToStraightTarget(coworker.position, targetRaw, obstacles);
     return {
       ...coworker,
       patrolRoute: [coworker.position, target],

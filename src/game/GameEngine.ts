@@ -363,7 +363,9 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   // Phase 3.3: Snitch integration — periodic checks while gaming, only when no boss and low suspicion
   let nextSnitchCheckMs = state.nextSnitchCheckMs ?? null;
   const snitches = coworkers.filter((c) => c.type === 'snitch');
-  if (gameMode === 'gaming') {
+  // If a boss is already incoming (pre-spawn warning active), snitches cannot call the boss
+  const bossIncomingSoon = !!bossWarning && !!bossWarning.isActive;
+  if (gameMode === 'gaming' && !bossIncomingSoon) {
     const now = nowMs;
     if (nextSnitchCheckMs == null || now >= nextSnitchCheckMs) {
       for (const snitch of snitches) {
@@ -392,7 +394,8 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     }
   } else {
     // Not gaming → pause checks until next gaming window
-    nextSnitchCheckMs = null;
+    // Or when boss is already incoming: delay checks slightly
+    nextSnitchCheckMs = bossIncomingSoon ? nowMs + 5000 : null;
   }
 
   return {
