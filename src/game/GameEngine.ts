@@ -213,10 +213,10 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   }
   // Despawn active boss when time elapses
   if (bossesOut.length > 0 && activeBossDespawnMs !== null && nowMs >= activeBossDespawnMs) {
-    // Schedule next boss to allow a warning window instead of instant spawn
+    // Schedule next boss with a fixed 1s warning window (simplified)
     const currentType = bossesOut[0].type;
     const nextType = selectRandomBossType(currentType);
-    const warnWindow = BOSS_CONFIGS[nextType].warningTimeMs ?? 2000;
+    const warnWindow = 1000;
     bossesOut = [];
     activeBossDespawnMs = null;
     nextBossSpawnMs = nowMs + warnWindow;
@@ -228,7 +228,8 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   let upcomingBossType = state.upcomingBossType ?? null;
   if (bossesOut.length === 0) {
     if (nextBossSpawnMs === null) {
-      // If nothing scheduled (e.g., game start edge), schedule and set upcoming type
+      // If nothing scheduled (e.g., game start edge), schedule spawn and set upcoming type
+      // Use fixed 1s window for warning visibility just before spawn
       const delay = getRandomSpawnDelay(BossType.MANAGER);
       nextBossSpawnMs = nowMs + delay;
       upcomingBossType = selectRandomBossType();
@@ -237,7 +238,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
       // Ensure we have an upcoming type
       if (!upcomingBossType) upcomingBossType = selectRandomBossType();
       const timeUntil = nextBossSpawnMs - nowMs;
-      const warnWindow = BOSS_CONFIGS[upcomingBossType].warningTimeMs ?? 2000;
+      const warnWindow = 1000; // show warning only in the last 1s
       if (timeUntil > 0 && timeUntil <= warnWindow) {
         bossWarning = {
           bossType: upcomingBossType,

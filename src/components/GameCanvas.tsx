@@ -3,8 +3,7 @@ import { CANVAS_HEIGHT, CANVAS_WIDTH } from '../game/constants.ts';
 import { calculateDynamicMultiplier, createInitialState, drawFrame, updateGameState } from '../game/GameEngine.ts';
 import type { Boss, BossWarning, Desk, GameState, Player } from '../game/types.ts';
 import { hasLineOfSight } from '../game/collision.ts';
-import { BOSS_CONFIGS, WARNING_CONFIG } from '../game/constants.ts';
-import { BossType } from '../game/types.ts';
+import { WARNING_CONFIG } from '../game/constants.ts';
 
 type Key = 'KeyW' | 'KeyA' | 'KeyS' | 'KeyD' | 'KeyE' | 'Space' | 'KeyR';
 
@@ -154,82 +153,16 @@ function drawBossWarning(
   const centerX = canvasWidth / 2;
   const warningY = 50; // moved 20px higher again per request
 
-  const timePercent = warning.remainingMs / warning.totalWarningMs;
-  let warningColor: string;
-  let warningText: string;
-  if (timePercent > 0.66) {
-    warningColor = WARNING_CONFIG.colors.low;
-    warningText = 'Boss Approaching';
-  } else if (timePercent > 0.33) {
-    warningColor = WARNING_CONFIG.colors.medium;
-    warningText = 'Boss Incoming!';
-  } else {
-    warningColor = WARNING_CONFIG.colors.high;
-    warningText = 'BOSS ALERT!';
-  }
-
-  const pulseAlpha = timePercent < 0.33 ? 0.7 + 0.3 * Math.sin(Date.now() / WARNING_CONFIG.pulseIntervalMs * Math.PI) : 0.9;
-  const boxWidth = 300;
-  const boxHeight = 90; // slightly taller to ensure all text fits inside
-  const boxTopY = warningY - 30; // previously was warningY - 20; lift by 10px
-  ctx.fillStyle = `rgba(0, 0, 0, ${pulseAlpha * 0.8})`;
-  ctx.fillRect(centerX - boxWidth / 2, boxTopY, boxWidth, boxHeight);
-  ctx.strokeStyle = warningColor;
-  ctx.lineWidth = 3;
-  ctx.strokeRect(centerX - boxWidth / 2, boxTopY, boxWidth, boxHeight);
-
-  // Text positions inside box with padding
-  const padY = 10;
-  const contentY = boxTopY + padY;
+  // Simplified 1-second minimal warning: text only, no box
+  const pulseAlpha = 0.7 + 0.3 * Math.sin(Date.now() / WARNING_CONFIG.pulseIntervalMs * Math.PI);
+  ctx.save();
+  ctx.globalAlpha = Math.max(0.4, Math.min(1, pulseAlpha));
   ctx.textAlign = 'center';
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = warningColor;
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = WARNING_CONFIG.colors.medium;
   ctx.font = 'bold 18px monospace';
-  ctx.fillText(warningText, centerX, contentY);
-
-  const bossTypeName = String(warning.bossType).toUpperCase();
-  const countdown = Math.ceil(warning.remainingMs / 1000);
-  ctx.font = '14px monospace';
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillText(`${bossTypeName} in ${countdown}s`, centerX, contentY + 22);
-
-  const config = BOSS_CONFIGS[warning.bossType as keyof typeof BOSS_CONFIGS];
-  let threatLevel = 'LOW RISK';
-  let threatColor = '#00FF00';
-  if (config.basePointsPerSecond >= 200) {
-    threatLevel = 'EXTREME RISK';
-    threatColor = '#FF0000';
-  } else if (config.basePointsPerSecond >= 100) {
-    threatLevel = 'HIGH RISK';
-    threatColor = '#FF8C00';
-  } else if (config.basePointsPerSecond >= 60) {
-    threatLevel = 'MEDIUM RISK';
-    threatColor = '#FFFF00';
-  }
-  ctx.font = '12px monospace';
-  ctx.fillStyle = threatColor;
-  ctx.fillText(`Threat: ${threatLevel}`, centerX, contentY + 42);
-
-  let strategicTip = '🎮 Switch to work mode to stay safe';
-  switch (warning.bossType as BossType) {
-    case BossType.MANAGER:
-      strategicTip = '💡 Good opportunity for safe gaming';
-      break;
-    case BossType.DIRECTOR:
-      strategicTip = '⚠️ Moderate risk, decent rewards';
-      break;
-    case BossType.VP:
-      strategicTip = '🔥 High risk, high reward chance';
-      break;
-    case BossType.CEO:
-      strategicTip = '💀 Extreme danger - consider working';
-      break;
-    default:
-      strategicTip = '🎮 Switch to work mode to stay safe';
-  }
-  ctx.font = '11px monospace';
-  ctx.fillStyle = '#CCCCCC';
-  ctx.fillText(strategicTip, centerX, contentY + 60);
+  ctx.fillText('Boss Incoming!', centerX, warningY);
+  ctx.restore();
 }
 
 function drawScoreAndMultiplier(
