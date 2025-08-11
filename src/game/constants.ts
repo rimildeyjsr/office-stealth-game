@@ -119,16 +119,16 @@ export const COWORKER_CONFIGS: Record<CoworkerType, CoworkerConfig> = {
     color: '#00FF00',
     size: 18,
     speed: 1.2,
-    spawnProbability: 0.4,
+    spawnProbability: 0.7,
     actionCooldownMs: 15000,
-    effectDurationMs: 3000,
+    effectDurationMs: 2000,
   },
   [CoworkerType.SNITCH]: {
     type: CoworkerType.SNITCH,
     color: '#FFA500',
     size: 16,
     speed: 1.4,
-    spawnProbability: 0.25,
+    spawnProbability: 0.15,
     actionCooldownMs: 30000,
     effectDurationMs: 1000,
   },
@@ -137,7 +137,7 @@ export const COWORKER_CONFIGS: Record<CoworkerType, CoworkerConfig> = {
     color: '#FF69B4',
     size: 16,
     speed: 1.1,
-    spawnProbability: 0.2,
+    spawnProbability: 0.1,
     actionCooldownMs: 25000,
     effectDurationMs: 2000,
   },
@@ -146,7 +146,7 @@ export const COWORKER_CONFIGS: Record<CoworkerType, CoworkerConfig> = {
     color: '#1E90FF',
     size: 20,
     speed: 1.0,
-    spawnProbability: 0.15,
+    spawnProbability: 0.05,
     actionCooldownMs: 20000,
     effectDurationMs: 3000,
   },
@@ -154,7 +154,7 @@ export const COWORKER_CONFIGS: Record<CoworkerType, CoworkerConfig> = {
 
 export const COWORKER_SYSTEM = {
   maxActiveCoworkers: 3,
-  spawnDelayMs: [8000, 20000] as [number, number],
+  spawnDelayMs: [2000, 5000] as [number, number],
   despawnDurationMs: [15000, 30000] as [number, number],
 } as const;
 

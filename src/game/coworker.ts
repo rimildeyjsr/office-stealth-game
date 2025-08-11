@@ -1,5 +1,7 @@
 import { CANVAS_HEIGHT, CANVAS_WIDTH, COWORKER_CONFIGS, COWORKER_SYSTEM } from './constants.ts';
-import type { Coworker, CoworkerConfig, Desk, Position } from './types.ts';
+import type { Boss, Coworker, CoworkerConfig, Desk, GameState, Player, Position } from './types.ts';
+import { CoworkerType } from './types.ts';
+import { hasLineOfSight } from './collision.ts';
 
 type Rect = { x: number; y: number; width: number; height: number };
 
@@ -78,10 +80,25 @@ function pickNextTarget(from: Position, vLines: number[], hLines: number[], obst
   return top[Math.floor(Math.random() * top.length)].p;
 }
 
-export function createCoworkerFromConfig(config: CoworkerConfig, desks: Desk[]): Coworker {
+function findNearestIntersection(vLines: number[], hLines: number[], pos: Position): Position {
+  let best: Position = { x: vLines[0], y: hLines[0] };
+  let bestD = Number.POSITIVE_INFINITY;
+  for (const x of vLines) {
+    for (const y of hLines) {
+      const d = Math.hypot(x - pos.x, y - pos.y);
+      if (d < bestD) {
+        best = { x, y };
+        bestD = d;
+      }
+    }
+  }
+  return best;
+}
+
+export function createCoworkerFromConfig(config: CoworkerConfig, desks: Desk[], spawnHint?: Position): Coworker {
   const { vLines, hLines } = computeWalkwayLines(desks);
   const obstacles: Rect[] = desks.map((d) => d.bounds);
-  const start: Position = {
+  const start: Position = spawnHint ? findNearestIntersection(vLines, hLines, spawnHint) : {
     x: vLines[Math.floor(Math.random() * vLines.length)],
     y: hLines[Math.floor(Math.random() * hLines.length)],
   };
@@ -103,12 +120,13 @@ export function createCoworkerFromConfig(config: CoworkerConfig, desks: Desk[]):
 }
 
 export function updateCoworker(coworker: Coworker, desks: Desk[]): Coworker {
-  const target = coworker.patrolRoute[coworker.currentTarget];
+  const target = coworker.rushTarget ?? coworker.patrolRoute[coworker.currentTarget];
   const dx = target.x - coworker.position.x;
   const dy = target.y - coworker.position.y;
   const dist = Math.hypot(dx, dy) || 1;
-  const stepX = (dx / dist) * coworker.speed;
-  const stepY = (dy / dist) * coworker.speed;
+  const speed = coworker.rushTarget ? coworker.speed * 1.8 : coworker.speed;
+  const stepX = (dx / dist) * speed;
+  const stepY = (dy / dist) * speed;
   const nextX = coworker.position.x + stepX;
   const nextY = coworker.position.y + stepY;
 
@@ -117,15 +135,15 @@ export function updateCoworker(coworker: Coworker, desks: Desk[]): Coworker {
   const clampedY = Math.max(0, Math.min(CANVAS_HEIGHT, nextY));
 
   // If close enough, pick next waypoint
-  if (Math.hypot(target.x - clampedX, target.y - clampedY) <= coworker.speed) {
+  if (Math.hypot(target.x - clampedX, target.y - clampedY) <= speed) {
     const { vLines, hLines } = computeWalkwayLines(desks);
     const obstacles: Rect[] = desks.map((d) => d.bounds);
     const arrived: Position = { x: target.x, y: target.y };
-    const next = pickNextTarget(arrived, vLines, hLines, obstacles);
+    const next = coworker.rushTarget ? arrived : pickNextTarget(arrived, vLines, hLines, obstacles);
     return {
       ...coworker,
       position: arrived,
-      patrolRoute: [arrived, next],
+      patrolRoute: coworker.rushTarget ? coworker.patrolRoute : [arrived, next],
       currentTarget: 1,
     };
   }
@@ -152,6 +170,62 @@ export function getRandomCoworkerSpawnDelay(): number {
 export function getRandomCoworkerDespawnDuration(): number {
   const [min, max] = COWORKER_SYSTEM.despawnDurationMs;
   return Math.random() * (max - min) + min;
+}
+
+// Phase 3.2: Helpful coworker detection action
+export function checkHelpfulCoworkerAction(
+  coworker: Coworker,
+  player: Player,
+  boss: Boss | null,
+  gameState: GameState,
+): { shouldWarn: boolean; position?: Position } {
+  if (!boss || coworker.type !== CoworkerType.HELPFUL) return { shouldWarn: false };
+  // Only warn while gaming
+  if (gameState.gameMode !== 'gaming') return { shouldWarn: false };
+
+  const playerToBoss = Math.hypot(player.position.x - boss.position.x, player.position.y - boss.position.y);
+  const coworkerToPlayer = Math.hypot(player.position.x - coworker.position.x, player.position.y - coworker.position.y);
+  const now = performance.now();
+  const canAct = now - coworker.lastActionMs > COWORKER_CONFIGS[CoworkerType.HELPFUL].actionCooldownMs;
+
+  const bossHasLOS = hasLineOfSight(boss, player, gameState.desks);
+  const proximityOK = playerToBoss <= 200;
+  const losWithinOK = bossHasLOS && playerToBoss <= 250;
+
+  if ((proximityOK || losWithinOK) && coworkerToPlayer <= 100 && canAct) {
+    return { shouldWarn: true, position: { x: coworker.position.x, y: coworker.position.y - 30 } };
+  }
+  return { shouldWarn: false };
+}
+
+// Phase 3.2 addition: initiate a brief "rush" towards the player to feel more office-like
+export function maybeStartHelpfulRush(coworker: Coworker, player: Player): Coworker {
+  if (coworker.type !== CoworkerType.HELPFUL) return coworker;
+  const now = performance.now();
+  // Rush lasts 2 seconds towards a point near the player (above)
+  const rushDuration = 2000;
+  const target: Position = { x: player.position.x, y: Math.max(0, player.position.y - 20) };
+  return {
+    ...coworker,
+    rushUntilMs: now + rushDuration,
+    rushTarget: target,
+  };
+}
+
+export function clearExpiredRush(coworker: Coworker): Coworker {
+  if (!coworker.rushUntilMs) return coworker;
+  if (performance.now() >= coworker.rushUntilMs) {
+    return { ...coworker, rushUntilMs: null, rushTarget: null };
+  }
+  return coworker;
+}
+
+export function updateRushTargetTowardsPlayer(coworker: Coworker, player: Player): Coworker {
+  if (!coworker.rushUntilMs) return coworker;
+  return {
+    ...coworker,
+    rushTarget: { x: player.position.x, y: Math.max(0, player.position.y - 20) },
+  };
 }
 
 

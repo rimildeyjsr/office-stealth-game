@@ -135,12 +135,15 @@ export interface Coworker {
   isActive: boolean;
   // Internal scheduling (Phase 3.1): when to despawn; optional to keep spec flexible
   despawnAtMs?: number | null;
+  // Phase 3.2: rushing behavior to warn player
+  rushUntilMs?: number | null;
+  rushTarget?: Position | null;
 }
 
 // Phase 3.2 forward-declared to keep GameState shape ready
 export interface CoworkerWarning {
   coworkerId: string;
-  type: 'boss_warning' | 'snitch_warning' | string;
+  type: 'boss_warning' | 'snitch_warning';
   message: string;
   position: Position;
   remainingMs: number;

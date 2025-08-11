@@ -1,10 +1,10 @@
-import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, BOSS_CONFIGS, SUSPICION_CONFIG, SUSPICION_MECHANICS, COWORKER_SYSTEM } from './constants.ts';
+import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, BOSS_CONFIGS, SUSPICION_CONFIG, SUSPICION_MECHANICS, COWORKER_SYSTEM, COWORKER_CONFIGS } from './constants.ts';
 import type { Boss, Coworker, Desk, GameMode, GameState, Player } from './types.ts';
 import { createOfficeLayout, getPlayerSeatAnchor, isNearSeatAnchor } from './office.ts';
 import { checkCollision, hasLineOfSight } from './collision.ts';
 import { createBossFromConfig, getRandomDespawnDuration, getRandomSpawnDelay, isPlayerDetected, selectRandomBossType, updateBoss } from './boss.ts';
 import { BossType } from './types.ts';
-import { createCoworkerFromConfig, getRandomCoworkerSpawnDelay, updateCoworker, pickRandomCoworkerConfig } from './coworker.ts';
+import { createCoworkerFromConfig, getRandomCoworkerSpawnDelay, updateCoworker, pickRandomCoworkerConfig, checkHelpfulCoworkerAction, maybeStartHelpfulRush, clearExpiredRush, updateRushTargetTowardsPlayer } from './coworker.ts';
 
 export interface InputState {
   up: boolean;
@@ -286,7 +286,11 @@ export function updateGameState(state: GameState, input: InputState): GameState 
 
   // Phase 3.1: Coworker updates and scheduling
   // Update coworkers movement
-  let coworkers: Coworker[] = (state.coworkers ?? []).map((c) => updateCoworker(c, state.desks));
+  let coworkers: Coworker[] = (state.coworkers ?? [])
+    .map((c) => clearExpiredRush(c))
+    // Keep rush target following player's current position while rushing
+    .map((c) => updateRushTargetTowardsPlayer(c, { ...player, position: newPosition }))
+    .map((c) => updateCoworker(c, state.desks));
   // Despawn coworkers whose timer elapsed
   coworkers = coworkers.filter((c) => (c.despawnAtMs == null ? true : nowMs < c.despawnAtMs));
   // Limit max active coworkers
@@ -296,15 +300,51 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   // Spawn new coworker when timer elapses and under max
   let nextCoworkerSpawnMs = state.nextCoworkerSpawnMs ?? null;
   if (nextCoworkerSpawnMs !== null && nowMs >= nextCoworkerSpawnMs && coworkers.length < COWORKER_SYSTEM.maxActiveCoworkers) {
-    const cfg = pickRandomCoworkerConfig();
-    const newCoworker = createCoworkerFromConfig(cfg, state.desks);
+    // Ensure at least one helpful coworker is always present
+    const hasHelpful = coworkers.some((c) => c.type === 'helpful');
+    const cfg = hasHelpful ? pickRandomCoworkerConfig() : COWORKER_CONFIGS.helpful;
+    // Helpful coworker prefers to spawn near player desk area
+    const spawnHint = cfg.type === 'helpful' ? (state.desks.find((d) => d.isPlayerDesk)?.bounds ?? null) : null;
+    const hintPos = spawnHint ? { x: spawnHint.x + spawnHint.width / 2, y: spawnHint.y + spawnHint.height + 20 } : undefined;
+    const newCoworker = createCoworkerFromConfig(cfg, state.desks, hintPos);
     coworkers = [...coworkers, newCoworker];
-    nextCoworkerSpawnMs = nowMs + getRandomCoworkerSpawnDelay();
+    // Chain-spawn quickly if under max to ensure presence during playtests
+    nextCoworkerSpawnMs = coworkers.length < COWORKER_SYSTEM.maxActiveCoworkers ? nowMs + 800 : nowMs + getRandomCoworkerSpawnDelay();
   }
   // If we have no timer, schedule one
   if (nextCoworkerSpawnMs === null) {
     nextCoworkerSpawnMs = nowMs + getRandomCoworkerSpawnDelay();
   }
+  // Phase 3.2: Helpful coworker warning system
+  let coworkerWarnings = [...(state.coworkerWarnings ?? [])];
+  const helpfuls = coworkers.filter((c) => c.type === 'helpful');
+  for (let i = 0; i < helpfuls.length; i += 1) {
+    const cw = helpfuls[i];
+    const result = checkHelpfulCoworkerAction(cw, { ...player, position: newPosition }, activeBoss, state);
+    if (result.shouldWarn && result.position) {
+      // Register a warning and apply score penalty once
+      const penalty = Math.floor((state.score) * 0.5);
+      coworkerWarnings.push({
+        coworkerId: cw.id,
+        type: 'boss_warning',
+        message: 'Boss incoming!',
+        position: result.position,
+        remainingMs: 2000,
+        scoreReduction: penalty,
+      });
+      // Update last action to enforce cooldown
+      cw.lastActionMs = nowMs;
+      // Trigger brief rush behavior for urgency
+      const rushed = maybeStartHelpfulRush(cw, { ...player, position: newPosition });
+      coworkers = coworkers.map((x) => (x.id === rushed.id ? rushed : x));
+      // Apply immediate score reduction
+      nextScore = Math.max(0, nextScore - penalty);
+    }
+  }
+  // Tick down coworker warnings and prune expired
+  coworkerWarnings = coworkerWarnings
+    .map((w) => ({ ...w, remainingMs: w.remainingMs - deltaTimeMs }))
+    .filter((w) => w.remainingMs > 0);
 
   return {
     ...state,
@@ -326,6 +366,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     upcomingBossType,
     coworkers,
     nextCoworkerSpawnMs,
+    coworkerWarnings,
   };
 }
 
@@ -380,6 +421,32 @@ export function drawFrame(ctx: CanvasRenderingContext2D, state: GameState, frame
     const size = coworker.size;
     ctx.fillStyle = coworker.color;
     ctx.fillRect(coworker.position.x - size / 2, coworker.position.y - size / 2, size, size);
+  }
+
+  // Draw coworker warning bubbles above helpful coworkers
+  for (const warning of state.coworkerWarnings ?? []) {
+    if (warning.type !== 'boss_warning') continue;
+    const alpha = Math.max(0.2, Math.min(1, warning.remainingMs / 2000));
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#FFFFFF';
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2;
+    const text = warning.message;
+    ctx.font = '12px sans-serif';
+    const padding = 6;
+    const textWidth = ctx.measureText(text).width;
+    const width = textWidth + padding * 2;
+    const height = 20;
+    const x = warning.position.x - width / 2;
+    const y = warning.position.y - height;
+    ctx.fillRect(x, y, width, height);
+    ctx.strokeRect(x, y, width, height);
+    ctx.fillStyle = '#000000';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, warning.position.x, warning.position.y - height / 2);
+    ctx.restore();
   }
 
   // Game Over overlay
