@@ -4,7 +4,7 @@ import { createOfficeLayout, getPlayerSeatAnchor, isNearSeatAnchor } from './off
 import { checkCollision, hasLineOfSight } from './collision.ts';
 import { createBossFromConfig, getRandomDespawnDuration, getRandomSpawnDelay, isPlayerDetected, selectRandomBossType, updateBoss } from './boss.ts';
 import { BossType } from './types.ts';
-import { createCoworkerFromConfig, getRandomCoworkerSpawnDelay, updateCoworker, pickRandomCoworkerConfig, checkHelpfulCoworkerAction, maybeStartHelpfulRush, clearExpiredRush, updateRushTargetTowardsPlayer } from './coworker.ts';
+import { createCoworkerFromConfig, getRandomCoworkerSpawnDelay, updateCoworker, pickRandomCoworkerConfig, checkHelpfulCoworkerAction, maybeStartHelpfulRush, clearExpiredRush, updateRushTargetTowardsPlayer, checkSnitchAction } from './coworker.ts';
 
 export interface InputState {
   up: boolean;
@@ -185,14 +185,21 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     }
   }
 
-  // Update score using dynamic multiplier only when boss is present and gaming
+  // Update score; introduce easy-period halved scoring when no boss present.
   let nextScore = state.score;
   let lastScoreUpdateMs = state.lastScoreUpdateMs ?? performance.now();
   const nowMs = performance.now();
   const deltaTimeMs = Math.max(0, (state.lastUpdateMs ? nowMs - state.lastUpdateMs : 16));
-  if (!isGameOver && gameMode === 'gaming' && state.bosses.length > 0) {
-    const boss = state.bosses[0];
-    nextScore += calculateScoreIncrease(gameMode, boss, { ...player, position: newPosition }, state.suspicion ?? 0, state.desks, deltaTimeMs);
+  if (!isGameOver && gameMode === 'gaming') {
+    const active = state.bosses[0] ?? null;
+    if (active) {
+      nextScore += calculateScoreIncrease(gameMode, active, { ...player, position: newPosition }, state.suspicion ?? 0, state.desks, deltaTimeMs);
+    } else {
+      // Easy period: score at 50% of Manager base rate without multipliers
+      const deltaSeconds = deltaTimeMs / 1000;
+      const base = BOSS_CONFIGS[BossType.MANAGER].basePointsPerSecond;
+      nextScore += (base * 0.5) * deltaSeconds;
+    }
   }
   lastScoreUpdateMs = nowMs;
 
@@ -218,13 +225,13 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   }
   // Despawn active boss when time elapses
   if (bossesOut.length > 0 && activeBossDespawnMs !== null && nowMs >= activeBossDespawnMs) {
-    // Schedule next boss with a fixed 1s warning window (simplified)
+    // Introduce real cool-off period with no boss
     const currentType = bossesOut[0].type;
     const nextType = selectRandomBossType(currentType);
-    const warnWindow = 1000;
+    const downtime = getRandomSpawnDelay(BossType.MANAGER); // 8–15s by current config
     bossesOut = [];
     activeBossDespawnMs = null;
-    nextBossSpawnMs = nowMs + warnWindow;
+    nextBossSpawnMs = nowMs + downtime;
     state.bossWarning = null;
     state.upcomingBossType = nextType;
   }
@@ -346,6 +353,41 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     .map((w) => ({ ...w, remainingMs: w.remainingMs - deltaTimeMs }))
     .filter((w) => w.remainingMs > 0);
 
+  // Phase 3.3: Snitch integration — periodic checks while gaming, only when no boss and low suspicion
+  let nextSnitchCheckMs = state.nextSnitchCheckMs ?? null;
+  const snitches = coworkers.filter((c) => c.type === 'snitch');
+  if (gameMode === 'gaming') {
+    const now = nowMs;
+    if (nextSnitchCheckMs == null || now >= nextSnitchCheckMs) {
+      for (const snitch of snitches) {
+        const action = checkSnitchAction(snitch, gameMode, { ...player, position: newPosition }, suspicion, bossesOut.length > 0);
+        if (action.shouldCallBoss) {
+          // Schedule next boss sooner by 75% (i.e., 25% of normal delay)
+          const reducedDelay = getRandomSpawnDelay(BossType.MANAGER) * 0.25;
+          // Only affect if no active boss; if boss already present, still update nextBossSpawnMs
+          nextBossSpawnMs = now + reducedDelay;
+          upcomingBossType = selectRandomBossType();
+          // Visual warning center-top for 1s
+          coworkerWarnings.push({
+            coworkerId: snitch.id,
+            type: 'snitch_warning',
+            message: action.warningMessage ?? 'Someone called the boss!',
+            position: { x: CANVAS_WIDTH / 2, y: 80 },
+            remainingMs: 1000,
+            scoreReduction: 0,
+          });
+          // Cooldown per snitch
+          snitch.lastActionMs = now;
+        }
+      }
+      // Next check in 5 seconds
+      nextSnitchCheckMs = now + 5000;
+    }
+  } else {
+    // Not gaming → pause checks until next gaming window
+    nextSnitchCheckMs = null;
+  }
+
   return {
     ...state,
     player: {
@@ -367,6 +409,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     coworkers,
     nextCoworkerSpawnMs,
     coworkerWarnings,
+    nextSnitchCheckMs: state.nextSnitchCheckMs ?? null,
   };
 }
 

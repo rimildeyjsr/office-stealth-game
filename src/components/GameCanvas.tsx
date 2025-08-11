@@ -94,13 +94,15 @@ export const GameCanvas: React.FC = () => {
         stateRef.current.desks,
       );
 
-      // Enhanced warning overlay
+      // Enhanced warning overlay (boss pre-spawn)
       if (!stateRef.current.isGameOver) {
         drawBossWarning(
           ctx,
           (stateRef.current as any).bossWarning as BossWarning | null,
           CANVAS_WIDTH,
         );
+        // Draw coworker overlay warnings (helpful + snitch)
+        drawCoworkerWarnings(ctx, stateRef.current as GameState);
       }
 
       // FPS meter: log once per second
@@ -143,6 +145,23 @@ function drawLineOfSight(
     ctx.stroke();
   }
 }
+function drawCoworkerWarnings(ctx: CanvasRenderingContext2D, state: GameState) {
+  const warnings = (state.coworkerWarnings ?? []);
+  for (const w of warnings) {
+    if (w.type === 'boss_warning') continue; // handled in engine draw
+    if (w.type === 'snitch_warning') {
+      ctx.save();
+      ctx.globalAlpha = Math.max(0.3, Math.min(1, w.remainingMs / 1000));
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#FFD700';
+      ctx.font = 'bold 16px monospace';
+      ctx.fillText(w.message, w.position.x, w.position.y);
+      ctx.restore();
+    }
+  }
+}
+
 
 function drawBossWarning(
   ctx: CanvasRenderingContext2D,

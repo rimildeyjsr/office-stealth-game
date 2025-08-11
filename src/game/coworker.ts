@@ -198,6 +198,36 @@ export function checkHelpfulCoworkerAction(
   return { shouldWarn: false };
 }
 
+// Phase 3.3: Snitch action logic (20% chance per interval while gaming)
+export function checkSnitchAction(
+  coworker: Coworker,
+  gameMode: 'work' | 'gaming',
+  player: Player,
+  suspicion: number,
+  hasActiveBoss: boolean,
+): { shouldCallBoss: boolean; warningMessage?: string } {
+  if (coworker.type !== CoworkerType.SNITCH || gameMode !== 'gaming') {
+    return { shouldCallBoss: false };
+  }
+  // Only snitch when there are no bosses around and suspicion is low (<10%)
+  if (hasActiveBoss || suspicion >= 10) return { shouldCallBoss: false };
+
+  const now = performance.now();
+  const canAct = now - coworker.lastActionMs > COWORKER_CONFIGS[CoworkerType.SNITCH].actionCooldownMs;
+
+  // Snitch must have "passed by" and seen the player recently (within 3s and within 120px)
+  const near = Math.hypot(player.position.x - coworker.position.x, player.position.y - coworker.position.y) <= 120;
+  if (near) {
+    coworker.lastNearPlayerMs = now;
+  }
+  const recentlyNear = coworker.lastNearPlayerMs != null && now - (coworker.lastNearPlayerMs ?? 0) <= 3000;
+
+  if (canAct && recentlyNear && Math.random() < 0.2) {
+    return { shouldCallBoss: true, warningMessage: 'Someone called the boss!' };
+  }
+  return { shouldCallBoss: false };
+}
+
 // Phase 3.2 addition: initiate a brief "rush" towards the player to feel more office-like
 export function maybeStartHelpfulRush(coworker: Coworker, player: Player): Coworker {
   if (coworker.type !== CoworkerType.HELPFUL) return coworker;

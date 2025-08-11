@@ -86,6 +86,8 @@ export interface GameState {
   coworkers: Coworker[];
   nextCoworkerSpawnMs?: number | null;
   coworkerWarnings?: CoworkerWarning[];
+  // Phase 3.3: snitch check cadence
+  nextSnitchCheckMs?: number | null;
 }
 
 // Phase 2.5: warning interface
@@ -138,6 +140,8 @@ export interface Coworker {
   // Phase 3.2: rushing behavior to warn player
   rushUntilMs?: number | null;
   rushTarget?: Position | null;
+  // Phase 3.3: proximity memory for snitch logic
+  lastNearPlayerMs?: number | null;
 }
 
 // Phase 3.2 forward-declared to keep GameState shape ready

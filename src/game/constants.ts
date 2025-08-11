@@ -96,8 +96,8 @@ export const SUSPICION_MECHANICS = {
   dangerZoneDistance: 100,
   dangerZoneMultiplier: 2,
   workingRecoveryRate: 2.5,
-  hiddenRecoveryRate: 0.3,
-  noRecoveryRate: 0.3,
+  hiddenRecoveryRate: 0.8,
+  noRecoveryRate: 1.0,
 } as const;
 
 // Phase 2.5: Warning display configuration
