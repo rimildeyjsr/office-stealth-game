@@ -164,9 +164,9 @@ export const COWORKER_SYSTEM = {
 // Phase 3.4: Boss UX / behavior tuning
 export const BOSS_UX = {
   // Chance per check interval to shout (per active boss)
-  shoutChance: 0.25,
+  shoutChance: 0.6,
   // Interval between shout checks
-  shoutCheckMs: 4000,
+  shoutCheckMs: 2000,
   // How long a shout bubble stays on screen
   shoutDurationMs: 1200,
   // Possible shout lines
