@@ -553,15 +553,32 @@ export function updateGameState(state: GameState, input: InputState): GameState 
         const shouldAsk = checkDistractionQuestion(d, gameMode, conversationState);
         if (shouldAsk) {
           const qText = WORK_QUESTIONS[Math.floor(Math.random() * WORK_QUESTIONS.length)];
+          // Despawn all existing distractions and respawn one fixed 15px to the right of the seat dot
+          const playerDeskNow = state.desks.find((desk) => desk.isPlayerDesk) ?? null;
+          const seatAnchor = playerDeskNow ? getPlayerSeatAnchor(playerDeskNow) : newPosition;
+          const seatDotCenter = { x: seatAnchor.x + PLAYER_SIZE / 2, y: seatAnchor.y + PLAYER_SIZE / 2 };
+          const respawnExact = { x: seatDotCenter.x + 15, y: seatDotCenter.y };
+          const newDistraction = createCoworkerFromConfig(COWORKER_CONFIGS[CoworkerType.DISTRACTION], state.desks, respawnExact);
+          newDistraction.position = { ...respawnExact } as any;
+          newDistraction.patrolRoute = [ { ...respawnExact } as any, { ...respawnExact } as any ];
+          newDistraction.currentTarget = 1;
+          newDistraction.rushTarget = { ...respawnExact } as any;
+          // Pin for the entire question timeout
+          const timeoutMs = 5000;
+          newDistraction.rushUntilMs = now + timeoutMs;
+          newDistraction.color = COWORKER_CONFIGS[CoworkerType.DISTRACTION].color;
+          newDistraction.lastActionMs = now;
+          coworkers = coworkers.filter((x) => x.type !== CoworkerType.DISTRACTION);
+          coworkers.push(newDistraction);
+
           activeQuestion = {
             id: `q-${now}`,
-            coworkerId: d.id,
+            coworkerId: newDistraction.id,
             question: qText,
             isActive: true,
             startMs: now,
-            timeoutMs: 5000,
+            timeoutMs,
           };
-          d.lastActionMs = now;
           state.lastInterruptionMs = now;
           state.nextForcedInterruptionMs = now + 20000;
           break;
@@ -630,18 +647,33 @@ export function updateGameState(state: GameState, input: InputState): GameState 
           state.nextForcedInterruptionMs = nowMs + 20000;
         }
       } else if (hasDistraction) {
-        // Force distraction question
+        // Force distraction question: despawn all distractions and respawn beside seat
         const d = coworkers.find((c) => c.type === 'distraction');
         if (d) {
+          const playerDeskNow = state.desks.find((desk) => desk.isPlayerDesk) ?? null;
+          const seatAnchor = playerDeskNow ? getPlayerSeatAnchor(playerDeskNow) : newPosition;
+          const seatDotCenter = { x: seatAnchor.x + PLAYER_SIZE / 2, y: seatAnchor.y + PLAYER_SIZE / 2 };
+          const respawnExact = { x: seatDotCenter.x + 15, y: seatDotCenter.y };
+          const newDistraction = createCoworkerFromConfig(COWORKER_CONFIGS[CoworkerType.DISTRACTION], state.desks, respawnExact);
+          newDistraction.position = { ...respawnExact } as any;
+          newDistraction.patrolRoute = [ { ...respawnExact } as any, { ...respawnExact } as any ];
+          newDistraction.currentTarget = 1;
+          newDistraction.rushTarget = { ...respawnExact } as any;
+          const timeoutMs = 5000;
+          newDistraction.rushUntilMs = nowMs + timeoutMs;
+          newDistraction.color = COWORKER_CONFIGS[CoworkerType.DISTRACTION].color;
+          newDistraction.lastActionMs = nowMs;
+          coworkers = coworkers.filter((x) => x.type !== CoworkerType.DISTRACTION);
+          coworkers.push(newDistraction);
+
           activeQuestion = {
             id: `q-${nowMs}`,
-            coworkerId: d.id,
+            coworkerId: newDistraction.id,
             question: WORK_QUESTIONS[Math.floor(Math.random() * WORK_QUESTIONS.length)],
             isActive: true,
             startMs: nowMs,
-            timeoutMs: 5000,
+            timeoutMs,
           };
-          (d as any).lastActionMs = nowMs;
           state.lastInterruptionMs = nowMs;
           state.nextForcedInterruptionMs = nowMs + 20000;
         }
