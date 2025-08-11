@@ -154,7 +154,7 @@ export interface Coworker {
 // Phase 3.2 forward-declared to keep GameState shape ready
 export interface CoworkerWarning {
   coworkerId: string;
-  type: 'boss_warning' | 'snitch_warning';
+  type: 'boss_warning' | 'snitch_warning' | 'gossip_warning';
   message: string;
   position: Position;
   remainingMs: number;

@@ -101,10 +101,9 @@ export const GameCanvas: React.FC = () => {
           (stateRef.current as any).bossWarning as BossWarning | null,
           CANVAS_WIDTH,
         );
-        // Draw coworker overlay warnings (helpful + snitch)
+        // Draw coworker overlay warnings (helpful + snitch + gossip countdown)
         drawCoworkerWarnings(ctx, stateRef.current as GameState);
-        // Draw conversation overlay if active (Phase 3.4)
-        drawConversationLock(ctx, stateRef.current as GameState);
+        // Conversation overlay removed per request; only top-of-sprite messages remain
       }
 
       // FPS meter: log once per second
@@ -151,12 +150,13 @@ function drawCoworkerWarnings(ctx: CanvasRenderingContext2D, state: GameState) {
   const warnings = (state.coworkerWarnings ?? []);
   for (const w of warnings) {
     if (w.type === 'boss_warning') continue; // handled in engine draw
-    if (w.type === 'snitch_warning') {
+    if (w.type === 'snitch_warning' || w.type === 'gossip_warning') {
       ctx.save();
-      ctx.globalAlpha = Math.max(0.3, Math.min(1, w.remainingMs / 1000));
+      const denom = w.type === 'snitch_warning' ? 1000 : 5000;
+      ctx.globalAlpha = Math.max(0.3, Math.min(1, w.remainingMs / denom));
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillStyle = '#FFD700';
+      ctx.fillStyle = w.type === 'gossip_warning' ? '#FF69B4' : '#FFD700';
       ctx.font = 'bold 16px monospace';
       ctx.fillText(w.message, w.position.x, w.position.y);
       ctx.restore();
@@ -164,22 +164,6 @@ function drawCoworkerWarnings(ctx: CanvasRenderingContext2D, state: GameState) {
   }
 }
 
-
-function drawConversationLock(ctx: CanvasRenderingContext2D, state: GameState) {
-  const conv = (state as any).conversationState as GameState['conversationState'];
-  if (!conv || !conv.isActive) return;
-  const alpha = Math.max(0.3, Math.min(1, 1 - ((performance.now() - conv.startMs) / (conv.durationMs)) * 0.2));
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.fillStyle = 'rgba(0,0,0,0.5)';
-  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-  ctx.fillStyle = '#FFFFFF';
-  ctx.font = 'bold 18px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('Coworker wants to chat...', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
-  ctx.restore();
-}
 
 
 function drawBossWarning(

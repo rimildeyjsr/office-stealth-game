@@ -346,3 +346,25 @@ export function checkGossipInterruption(
   return null;
 }
 
+// Phase 3.4: Direct the gossiper to walk to the player and sit next
+export function setGossipApproachTarget(
+  coworker: Coworker,
+  anchor: Position,
+  desks: Desk[],
+  holdMs: number,
+): Coworker {
+  const target: Position = { x: anchor.x, y: Math.max(0, anchor.y) };
+  // Coerce to nearby intersection to keep path clean
+  const { vLines, hLines } = computeWalkwayLines(desks);
+  const obstacles: Rect[] = desks.map((d) => d.bounds);
+  const near = findNearestIntersection(vLines, hLines, target);
+  const straight = coerceToStraightTarget(coworker.position, near, obstacles);
+  return {
+    ...coworker,
+    patrolRoute: [coworker.position, straight],
+    currentTarget: 1,
+    rushTarget: target,
+    rushUntilMs: performance.now() + holdMs,
+  };
+}
+

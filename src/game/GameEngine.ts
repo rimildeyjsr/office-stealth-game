@@ -4,7 +4,7 @@ import { createOfficeLayout, getPlayerSeatAnchor, isNearSeatAnchor } from './off
 import { checkCollision, hasLineOfSight } from './collision.ts';
 import { createBossFromConfig, getRandomDespawnDuration, getRandomSpawnDelay, isPlayerDetected, selectRandomBossType, updateBoss } from './boss.ts';
 import { BossType } from './types.ts';
-import { createCoworkerFromConfig, getRandomCoworkerSpawnDelay, updateCoworker, pickRandomCoworkerConfig, checkHelpfulCoworkerAction, maybeStartHelpfulRush, clearExpiredRush, updateRushTargetTowardsPlayer, checkSnitchAction, maybeBiasSnitchTowardPlayer, checkGossipInterruption } from './coworker.ts';
+import { createCoworkerFromConfig, getRandomCoworkerSpawnDelay, updateCoworker, pickRandomCoworkerConfig, checkHelpfulCoworkerAction, maybeStartHelpfulRush, clearExpiredRush, updateRushTargetTowardsPlayer, checkSnitchAction, maybeBiasSnitchTowardPlayer, checkGossipInterruption, setGossipApproachTarget } from './coworker.ts';
 
 export interface InputState {
   up: boolean;
@@ -456,10 +456,10 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     }
   }
 
-  // Phase 3.4: Gossip interruptions — periodic checks while gaming
+  // Phase 3.4: Gossip simplified flow — approach player, show top message, lock for 3–8s
   let conversationState = state.conversationState ?? null;
   let nextGossipCheckMs = state.nextGossipCheckMs ?? null;
-  if (gameMode === 'gaming') {
+  if (gameMode === 'gaming' && (bossesOut.length > 0)) {
     const now = nowMs;
     if (nextGossipCheckMs == null || now >= nextGossipCheckMs) {
       const gossips = coworkers.filter((c) => c.type === 'gossip');
@@ -467,21 +467,40 @@ export function updateGameState(state: GameState, input: InputState): GameState 
         for (const g of gossips) {
           const conv = checkGossipInterruption(g, gameMode, conversationState);
           if (conv) {
-            conversationState = conv;
-            // Start cooldown for this gossip coworker
+            const playerDesk = state.desks.find((d) => d.isPlayerDesk) ?? null;
+            const anchor = playerDesk ? { x: playerDesk.bounds.x + playerDesk.bounds.width + 10, y: playerDesk.bounds.y } : newPosition;
+            const durationMs = 3000 + Math.floor(Math.random() * 5000);
+            const approached = setGossipApproachTarget(g, anchor, state.desks, durationMs + 1000);
+            coworkers = coworkers.map((x) => (x.id === approached.id ? approached : x));
+            // Top-of-screen single message with duration
+            coworkerWarnings.push({
+              coworkerId: g.id,
+              type: 'gossip_warning',
+              message: `Coworker wants to gossip for ${(durationMs / 1000) | 0}s`,
+              position: { x: CANVAS_WIDTH / 2, y: 50 },
+              remainingMs: 1200,
+              scoreReduction: 0,
+            });
+            // Start lock immediately
+            conversationState = {
+              isActive: true,
+              coworkerId: g.id,
+              startMs: now,
+              durationMs: durationMs,
+              message: 'Coworker wants to chat...'
+            };
             g.lastActionMs = now;
-            break; // only one conversation at a time
+            break;
           }
         }
       }
-      // Next check in 3 seconds
       nextGossipCheckMs = now + 3000;
     }
   } else {
     nextGossipCheckMs = null;
   }
 
-  // While conversation active, block toggle input already handled above, and end after duration
+  // While conversation active, end after duration
   if (conversationState?.isActive) {
     const now = nowMs;
     if (now - conversationState.startMs >= conversationState.durationMs) {
