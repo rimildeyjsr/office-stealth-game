@@ -1,10 +1,10 @@
-import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, BOSS_CONFIGS, SUSPICION_CONFIG, SUSPICION_MECHANICS, COWORKER_SYSTEM, COWORKER_CONFIGS, BOSS_UX } from './constants.ts';
+import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, BOSS_CONFIGS, SUSPICION_CONFIG, SUSPICION_MECHANICS, COWORKER_SYSTEM, COWORKER_CONFIGS, BOSS_UX, WORK_QUESTIONS, QUESTION_CHOICES } from './constants.ts';
 import type { Boss, Coworker, Desk, GameMode, GameState, Player } from './types.ts';
 import { createOfficeLayout, getPlayerSeatAnchor, isNearSeatAnchor } from './office.ts';
 import { checkCollision, hasLineOfSight } from './collision.ts';
 import { createBossFromConfig, getRandomDespawnDuration, getRandomSpawnDelay, isPlayerDetected, selectRandomBossType, updateBoss } from './boss.ts';
 import { BossType } from './types.ts';
-import { createCoworkerFromConfig, getRandomCoworkerSpawnDelay, updateCoworker, pickRandomCoworkerConfig, checkHelpfulCoworkerAction, maybeStartHelpfulRush, clearExpiredRush, updateRushTargetTowardsPlayer, checkSnitchAction, maybeBiasSnitchTowardPlayer, checkGossipInterruption, setGossipApproachTarget } from './coworker.ts';
+import { createCoworkerFromConfig, getRandomCoworkerSpawnDelay, updateCoworker, pickRandomCoworkerConfig, checkHelpfulCoworkerAction, maybeStartHelpfulRush, clearExpiredRush, updateRushTargetTowardsPlayer, checkSnitchAction, maybeBiasSnitchTowardPlayer, checkGossipInterruption, setGossipApproachTarget, checkDistractionQuestion } from './coworker.ts';
 
 export interface InputState {
   up: boolean;
@@ -57,6 +57,11 @@ export function createInitialState(): GameState {
     coworkerWarnings: [],
     conversationState: null,
     nextGossipCheckMs: performance.now() + 3000,
+    activeQuestion: null,
+    questionLockUntilMs: null,
+    nextDistractionCheckMs: performance.now() + 4000,
+    lastInterruptionMs: now,
+    nextForcedInterruptionMs: now + 20000,
   };
 }
 
@@ -177,7 +182,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   // Mode switching: Only allowed when sitting at player desk (idle state cannot toggle)
   if (input.toggleMode && !input._toggleHandled && isSitting) {
     // Phase 3.4: Block mode switching during active conversation
-    if (state.conversationState?.isActive) {
+    if (state.conversationState?.isActive || (state.questionLockUntilMs && performance.now() < state.questionLockUntilMs)) {
       input._toggleHandled = true; // consume toggle
     } else {
     gameMode = gameMode === 'work' ? 'gaming' : 'work';
@@ -206,6 +211,9 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   const nowMs = performance.now();
   const deltaTimeMs = Math.max(0, (state.lastUpdateMs ? nowMs - state.lastUpdateMs : 16));
   if (!isGameOver && gameMode === 'gaming' && !(state.conversationState?.isActive)) {
+    if (state.questionLockUntilMs && performance.now() < state.questionLockUntilMs) {
+      // score frozen during answer lock
+    } else {
     const active = state.bosses[0] ?? null;
     if (active) {
       nextScore += calculateScoreIncrease(gameMode, active, { ...player, position: newPosition }, state.suspicion ?? 0, state.desks, deltaTimeMs);
@@ -214,6 +222,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
       const deltaSeconds = deltaTimeMs / 1000;
       const base = BOSS_CONFIGS[BossType.MANAGER].basePointsPerSecond;
       nextScore += (base * 0.5) * deltaSeconds;
+    }
     }
   }
   lastScoreUpdateMs = nowMs;
@@ -334,14 +343,22 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   // Spawn new coworker when timer elapses and under max
   let nextCoworkerSpawnMs = state.nextCoworkerSpawnMs ?? null;
   if (nextCoworkerSpawnMs !== null && nowMs >= nextCoworkerSpawnMs && coworkers.length < COWORKER_SYSTEM.maxActiveCoworkers) {
-    // Ensure at least one snitch and one helpful are always present
+    // Ensure at least one snitch and one helpful are always present;
+    // then ensure either gossip or distraction is present (randomly prefer the missing one).
     const hasHelpful = coworkers.some((c) => c.type === 'helpful');
     const hasSnitch = coworkers.some((c) => c.type === 'snitch');
     const hasGossip = coworkers.some((c) => c.type === 'gossip');
+    const hasDistraction = coworkers.some((c) => c.type === 'distraction');
     let cfg = pickRandomCoworkerConfig();
     if (!hasSnitch) cfg = COWORKER_CONFIGS.snitch;
     else if (!hasHelpful) cfg = COWORKER_CONFIGS.helpful;
-    else if (!hasGossip) cfg = COWORKER_CONFIGS.gossip;
+    else if (!hasGossip || !hasDistraction) {
+      // Choose whichever is missing; if both missing pick randomly
+      if (!hasGossip && !hasDistraction) {
+        cfg = Math.random() < 0.5 ? COWORKER_CONFIGS.gossip : COWORKER_CONFIGS.distraction;
+      } else if (!hasGossip) cfg = COWORKER_CONFIGS.gossip;
+      else cfg = COWORKER_CONFIGS.distraction;
+    }
     // Helpful and Snitch prefer to spawn near the player desk area to be noticeable
     const spawnHintBounds = (cfg.type === 'helpful' || cfg.type === 'snitch')
       ? (state.desks.find((d) => d.isPlayerDesk)?.bounds ?? null)
@@ -473,7 +490,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
           const conv = checkGossipInterruption(g, gameMode, conversationState);
           if (conv) {
             const playerDesk = state.desks.find((d) => d.isPlayerDesk) ?? null;
-            const anchor = playerDesk ? { x: playerDesk.bounds.x + playerDesk.bounds.width + 10, y: playerDesk.bounds.y } : newPosition;
+            const anchor = playerDesk ? getPlayerSeatAnchor(playerDesk) : newPosition;
             const durationMs = 3000 + Math.floor(Math.random() * 5000);
             const approached = setGossipApproachTarget(g, anchor, state.desks, durationMs + 1000);
             coworkers = coworkers.map((x) => (x.id === approached.id ? approached : x));
@@ -495,6 +512,8 @@ export function updateGameState(state: GameState, input: InputState): GameState 
               message: 'Coworker wants to chat...'
             };
             g.lastActionMs = now;
+            state.lastInterruptionMs = now;
+            state.nextForcedInterruptionMs = now + 20000;
             break;
           }
         }
@@ -505,11 +524,109 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     nextGossipCheckMs = null;
   }
 
+  // Phase 3.5: Distraction coworker question system (10% per 4s while gaming)
+  let activeQuestion = state.activeQuestion ?? null;
+  let questionLockUntilMs = state.questionLockUntilMs ?? null;
+  let nextDistractionCheckMs = state.nextDistractionCheckMs ?? null;
+  if (gameMode === 'gaming' && !(conversationState?.isActive)) {
+    const now = nowMs;
+    if (nextDistractionCheckMs == null || now >= nextDistractionCheckMs) {
+      const distractions = coworkers.filter((c) => c.type === 'distraction');
+      for (const d of distractions) {
+        const shouldAsk = checkDistractionQuestion(d, gameMode, conversationState);
+        if (shouldAsk) {
+          const qText = WORK_QUESTIONS[Math.floor(Math.random() * WORK_QUESTIONS.length)];
+          activeQuestion = {
+            id: `q-${now}`,
+            coworkerId: d.id,
+            question: qText,
+            isActive: true,
+            startMs: now,
+            timeoutMs: 8000,
+          };
+          d.lastActionMs = now;
+          state.lastInterruptionMs = now;
+          state.nextForcedInterruptionMs = now + 20000;
+          break;
+        }
+      }
+      nextDistractionCheckMs = now + 4000;
+    }
+  } else {
+    nextDistractionCheckMs = null;
+  }
+
+  // Auto-resolve question on timeout with ignore behavior
+  if (activeQuestion && activeQuestion.isActive) {
+    if (nowMs - activeQuestion.startMs >= activeQuestion.timeoutMs) {
+      // Ignore path
+      nextScore = Math.max(0, nextScore + QUESTION_CHOICES.ignore.scoreChange);
+      // Flash a sleek top message for 3s
+      coworkerWarnings.push({
+        coworkerId: activeQuestion.coworkerId,
+        type: 'gossip_warning',
+        message: 'Coworker needs help',
+        position: { x: CANVAS_WIDTH / 2, y: 50 },
+        remainingMs: 3000,
+        scoreReduction: 0,
+      });
+      activeQuestion = null;
+    }
+  }
+
   // While conversation active, end after duration
   if (conversationState?.isActive) {
     const now = nowMs;
     if (now - conversationState.startMs >= conversationState.durationMs) {
       conversationState = null;
+    }
+  }
+
+  // Guarantee: if 20 seconds pass in gaming with a boss present and no interruptions (gossip or question), force one
+  if (gameMode === 'gaming' && bossesOut.length > 0) {
+    const lastInt = state.lastInterruptionMs ?? nowMs;
+    if ((state.nextForcedInterruptionMs ?? (lastInt + 20000)) <= nowMs && !conversationState?.isActive && !(activeQuestion?.isActive)) {
+      const hasGossip = coworkers.some((c) => c.type === 'gossip');
+      const hasDistraction = coworkers.some((c) => c.type === 'distraction');
+      if (hasGossip) {
+        // Force gossip
+        const g = coworkers.find((c) => c.type === 'gossip');
+        if (g) {
+          const playerDesk = state.desks.find((d) => d.isPlayerDesk) ?? null;
+          const anchor = playerDesk ? getPlayerSeatAnchor(playerDesk) : newPosition;
+          const durationMs = 3000 + Math.floor(Math.random() * 5000);
+          const approached = setGossipApproachTarget(g, anchor, state.desks, durationMs + 1000);
+          coworkers = coworkers.map((x) => (x.id === approached.id ? approached : x));
+          coworkerWarnings.push({
+            coworkerId: g.id,
+            type: 'gossip_warning',
+            message: `Coworker wants to gossip for ${(durationMs / 1000) | 0}s`,
+            position: { x: CANVAS_WIDTH / 2, y: 50 },
+            remainingMs: durationMs,
+            scoreReduction: 0,
+          });
+          conversationState = { isActive: true, coworkerId: g.id, startMs: nowMs, durationMs, message: 'Coworker wants to chat...' };
+          (g as any).lastActionMs = nowMs;
+          state.lastInterruptionMs = nowMs;
+          state.nextForcedInterruptionMs = nowMs + 20000;
+        }
+      } else if (hasDistraction) {
+        // Force distraction question
+        const d = coworkers.find((c) => c.type === 'distraction');
+        if (d) {
+          activeQuestion = {
+            id: `q-${nowMs}`,
+            coworkerId: d.id,
+            question: WORK_QUESTIONS[Math.floor(Math.random() * WORK_QUESTIONS.length)],
+            isActive: true,
+            startMs: nowMs,
+            timeoutMs: 8000,
+          };
+          (d as any).lastActionMs = nowMs;
+          state.lastInterruptionMs = nowMs;
+          state.nextForcedInterruptionMs = nowMs + 20000;
+        }
+      }
     }
   }
 
@@ -545,6 +662,9 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     nextBossSpawnIsSnitch,
     conversationState,
     nextGossipCheckMs,
+    activeQuestion,
+    questionLockUntilMs,
+    nextDistractionCheckMs,
   };
 }
 

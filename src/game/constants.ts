@@ -26,7 +26,7 @@ export const SCORE_UPDATE_INTERVAL = 50; // ms (1 point every 0.05s)
 
 // Phase 2.1: Boss hierarchy configs
 import { BossType, CoworkerType } from './types.ts';
-import type { BossConfig, CoworkerConfig, SuspicionSystem } from './types.ts';
+import type { BossConfig, CoworkerConfig, SuspicionSystem, QuestionChoice } from './types.ts';
 
 export const BOSS_CONFIGS: Record<BossType, BossConfig> = {
   [BossType.MANAGER]: {
@@ -137,7 +137,7 @@ export const COWORKER_CONFIGS: Record<CoworkerType, CoworkerConfig> = {
     color: '#FF69B4',
     size: 16,
     speed: 1.1,
-    spawnProbability: 0.1,
+    spawnProbability: 0.2,
     actionCooldownMs: 25000,
     effectDurationMs: 2000,
   },
@@ -146,7 +146,7 @@ export const COWORKER_CONFIGS: Record<CoworkerType, CoworkerConfig> = {
     color: '#1E90FF',
     size: 20,
     speed: 1.0,
-    spawnProbability: 0.05,
+    spawnProbability: 0.2,
     actionCooldownMs: 20000,
     effectDurationMs: 3000,
   },
@@ -182,6 +182,30 @@ export const BOSS_UX = {
   // Probability when above threshold to bias next waypoint toward player desk area
   biasChancePerRetarget: 0.6,
 } as const;
+
+// Phase 3.5: question pool and choices
+export const WORK_QUESTIONS = [
+  'Can you help me with this spreadsheet?',
+  'Do you know where the printer paper is?',
+  'What time is the team meeting?',
+  'Can you review this email draft?',
+  'Do you have the client\'s phone number?',
+] as const;
+
+export const QUESTION_CHOICES: Record<'answer' | 'ignore', QuestionChoice> = {
+  answer: {
+    action: 'answer',
+    label: 'Help them (+10 pts)',
+    scoreChange: 10,
+    lockDurationMs: 3000,
+  },
+  ignore: {
+    action: 'ignore',
+    label: 'Ignore (-5 pts)',
+    scoreChange: -5,
+    lockDurationMs: 0,
+  },
+};
 
 
 

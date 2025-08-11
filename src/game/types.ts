@@ -95,6 +95,13 @@ export interface GameState {
   // Phase 3.4: conversation lock state and scheduling
   conversationState?: ConversationState | null;
   nextGossipCheckMs?: number | null;
+  // Phase 3.5: distraction question system
+  activeQuestion?: WorkQuestion | null;
+  questionLockUntilMs?: number | null;
+  nextDistractionCheckMs?: number | null;
+  // Interruption guarantee timers
+  lastInterruptionMs?: number | null;
+  nextForcedInterruptionMs?: number | null;
 }
 
 // Phase 2.5: warning interface
@@ -179,5 +186,22 @@ export interface ConversationState {
   startMs: number;
   durationMs: number;
   message: string;
+}
+
+// Phase 3.5: work question system
+export interface WorkQuestion {
+  id: string;
+  coworkerId: string;
+  question: string;
+  isActive: boolean;
+  startMs: number;
+  timeoutMs: number;
+}
+
+export interface QuestionChoice {
+  action: 'answer' | 'ignore';
+  label: string;
+  scoreChange: number;
+  lockDurationMs: number;
 }
 

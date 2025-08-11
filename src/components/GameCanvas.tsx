@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from '../game/constants.ts';
+import { CANVAS_HEIGHT, CANVAS_WIDTH, QUESTION_CHOICES } from '../game/constants.ts';
 import { calculateDynamicMultiplier, createInitialState, drawFrame, updateGameState } from '../game/GameEngine.ts';
 import type { Boss, BossWarning, Desk, GameState, Player } from '../game/types.ts';
 import { hasLineOfSight } from '../game/collision.ts';
@@ -103,8 +103,73 @@ export const GameCanvas: React.FC = () => {
         );
         // Draw coworker overlay warnings (helpful + snitch + gossip countdown)
         drawCoworkerWarnings(ctx, stateRef.current as GameState);
-        // Conversation overlay removed per request; only top-of-sprite messages remain
+        // Phase 3.5: question modal overlay
+        drawWorkQuestion(ctx, stateRef.current as GameState);
       }
+
+      // Mouse input for question choices
+      canvas.onclick = (ev: MouseEvent) => {
+        const q = (stateRef.current as any).activeQuestion as GameState['activeQuestion'];
+        if (!q || !q.isActive) return;
+        const rect = canvas.getBoundingClientRect();
+        const mx = ev.clientX - rect.left;
+        const my = ev.clientY - rect.top;
+        // Define two invisible hit zones near top center for Help/Ignore
+        const helpZone = { x: CANVAS_WIDTH / 2 - 160, y: 30, w: 120, h: 40 };
+        const ignoreZone = { x: CANVAS_WIDTH / 2 + 40, y: 30, w: 120, h: 40 };
+        const inRect = (x: number, y: number, w: number, h: number) => mx >= x && mx <= x + w && my >= y && my <= y + h;
+        if (inRect(helpZone.x, helpZone.y, helpZone.w, helpZone.h)) {
+          // Answer choice
+          (stateRef.current as any).score = Math.max(0, (stateRef.current as any).score + QUESTION_CHOICES.answer.scoreChange);
+          (stateRef.current as any).questionLockUntilMs = performance.now() + QUESTION_CHOICES.answer.lockDurationMs;
+          // Flash "Helping..." for the lock duration
+          const cw = ((stateRef.current as any).coworkerWarnings ?? []) as any[];
+          (stateRef.current as any).coworkerWarnings = [
+            ...cw,
+            {
+              coworkerId: q.coworkerId,
+              type: 'gossip_warning',
+              message: 'Helping...',
+              position: { x: CANVAS_WIDTH / 2, y: 50 },
+              remainingMs: QUESTION_CHOICES.answer.lockDurationMs,
+              scoreReduction: 0,
+            },
+          ];
+          (stateRef.current as any).activeQuestion = null;
+        } else if (inRect(ignoreZone.x, ignoreZone.y, ignoreZone.w, ignoreZone.h)) {
+          // Ignore choice
+          (stateRef.current as any).score = Math.max(0, (stateRef.current as any).score + QUESTION_CHOICES.ignore.scoreChange);
+          (stateRef.current as any).activeQuestion = null;
+        }
+      };
+
+      // Keyboard shortcuts: H for help, I for ignore
+      window.onkeydown = (e: KeyboardEvent) => {
+        const q = (stateRef.current as any).activeQuestion as GameState['activeQuestion'];
+        if (!q || !q.isActive) return;
+        if (e.key.toLowerCase() === 'h') {
+          (stateRef.current as any).score = Math.max(0, (stateRef.current as any).score + QUESTION_CHOICES.answer.scoreChange);
+          (stateRef.current as any).questionLockUntilMs = performance.now() + QUESTION_CHOICES.answer.lockDurationMs;
+          // Flash "Helping..." for the lock duration
+          const cw = ((stateRef.current as any).coworkerWarnings ?? []) as any[];
+          (stateRef.current as any).coworkerWarnings = [
+            ...cw,
+            {
+              coworkerId: q.coworkerId,
+              type: 'gossip_warning',
+              message: 'Helping...',
+              position: { x: CANVAS_WIDTH / 2, y: 50 },
+              remainingMs: QUESTION_CHOICES.answer.lockDurationMs,
+              scoreReduction: 0,
+            },
+          ];
+          (stateRef.current as any).activeQuestion = null;
+        }
+        if (e.key.toLowerCase() === 'i') {
+          (stateRef.current as any).score = Math.max(0, (stateRef.current as any).score + QUESTION_CHOICES.ignore.scoreChange);
+          (stateRef.current as any).activeQuestion = null;
+        }
+      };
 
       // FPS meter: log once per second
       frameCountRef.current += 1;
@@ -162,6 +227,43 @@ function drawCoworkerWarnings(ctx: CanvasRenderingContext2D, state: GameState) {
       ctx.restore();
     }
   }
+}
+
+function drawWorkQuestion(ctx: CanvasRenderingContext2D, state: GameState) {
+  const q = (state as any).activeQuestion as GameState['activeQuestion'];
+  if (!q || !q.isActive) return;
+  // Sleek top-of-screen text overlay (no box)
+  const centerX = CANVAS_WIDTH / 2;
+  const y = 50;
+  const pulseAlpha = 0.7 + 0.3 * Math.sin(Date.now() / 500 * Math.PI);
+  ctx.save();
+  ctx.globalAlpha = Math.max(0.4, Math.min(1, pulseAlpha));
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#FFD700';
+  ctx.font = 'bold 18px monospace';
+  ctx.fillText('Coworker needs help — H: help, I: ignore', centerX, y);
+  ctx.restore();
+}
+
+function drawButton(
+  ctx: CanvasRenderingContext2D,
+  label: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+) {
+  ctx.fillStyle = '#F3F4F6';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = '#111827';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x, y, w, h);
+  ctx.fillStyle = '#111827';
+  ctx.font = '14px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, x + w / 2, y + h / 2);
 }
 
 

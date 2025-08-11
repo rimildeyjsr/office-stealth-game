@@ -368,3 +368,17 @@ export function setGossipApproachTarget(
   };
 }
 
+// Phase 3.5: Distraction check (10% per 4s while gaming)
+export function checkDistractionQuestion(
+  coworker: Coworker,
+  gameMode: 'work' | 'gaming',
+  existingConversation: ConversationState | null,
+): boolean {
+  if (coworker.type !== CoworkerType.DISTRACTION || gameMode !== 'gaming') return false;
+  if (existingConversation?.isActive) return false;
+  const now = performance.now();
+  const canAct = now - (coworker.lastActionMs ?? 0) > COWORKER_CONFIGS[CoworkerType.DISTRACTION].actionCooldownMs;
+  if (!canAct) return false;
+  return Math.random() < 0.10;
+}
+
