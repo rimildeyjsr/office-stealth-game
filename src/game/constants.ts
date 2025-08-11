@@ -38,6 +38,7 @@ export const BOSS_CONFIGS: Record<BossType, BossConfig> = {
     spawnProbability: 0.70,
     basePointsPerSecond: 20,
     spawnDelayMs: [8000, 15000],
+    warningTimeMs: 3000,
   },
   [BossType.DIRECTOR]: {
     type: BossType.DIRECTOR,
@@ -48,6 +49,7 @@ export const BOSS_CONFIGS: Record<BossType, BossConfig> = {
     spawnProbability: 0.20,
     basePointsPerSecond: 60,
     spawnDelayMs: [10000, 20000],
+    warningTimeMs: 2500,
   },
   [BossType.VP]: {
     type: BossType.VP,
@@ -58,6 +60,7 @@ export const BOSS_CONFIGS: Record<BossType, BossConfig> = {
     spawnProbability: 0.08,
     basePointsPerSecond: 100,
     spawnDelayMs: [12000, 25000],
+    warningTimeMs: 2000,
   },
   [BossType.CEO]: {
     type: BossType.CEO,
@@ -68,6 +71,7 @@ export const BOSS_CONFIGS: Record<BossType, BossConfig> = {
     spawnProbability: 0.02,
     basePointsPerSecond: 200,
     spawnDelayMs: [15000, 35000],
+    warningTimeMs: 1500,
   },
 };
 
@@ -94,6 +98,18 @@ export const SUSPICION_MECHANICS = {
   workingRecoveryRate: 2.5,
   hiddenRecoveryRate: 0.3,
   noRecoveryRate: 0.3,
+} as const;
+
+// Phase 2.5: Warning display configuration
+export const WARNING_CONFIG = {
+  fadeInMs: 200,
+  fadeOutMs: 300,
+  pulseIntervalMs: 500,
+  colors: {
+    low: '#FFFF00',
+    medium: '#FF8C00',
+    high: '#FF0000',
+  },
 } as const;
 
 

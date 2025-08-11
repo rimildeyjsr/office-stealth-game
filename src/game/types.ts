@@ -31,6 +31,8 @@ export interface BossConfig {
   spawnProbability: number;
   basePointsPerSecond: number;
   spawnDelayMs: [number, number];
+  // Phase 2.5: pre-spawn warning window per type
+  warningTimeMs?: number;
 }
 
 export interface Boss {
@@ -77,6 +79,17 @@ export interface GameState {
   // Phase 2.3: suspicion state and timing
   suspicion?: number; // 0-100
   lastUpdateMs?: number | null;
+  // Phase 2.5: warning system
+  bossWarning?: BossWarning | null;
+  upcomingBossType?: BossType | null;
+}
+
+// Phase 2.5: warning interface
+export interface BossWarning {
+  bossType: BossType;
+  remainingMs: number;
+  totalWarningMs: number;
+  isActive: boolean;
 }
 
 export interface Desk {

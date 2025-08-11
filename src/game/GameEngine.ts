@@ -40,6 +40,8 @@ export function createInitialState(): GameState {
     activeBossDespawnMs: now + getRandomDespawnDuration(BossType.MANAGER),
     suspicion: 0,
     lastUpdateMs: now,
+    bossWarning: null,
+    upcomingBossType: null,
   };
 }
 
@@ -195,11 +197,14 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   let activeBossDespawnMs = state.activeBossDespawnMs ?? null;
   // Spawn when timer elapses and no active boss
   if (bossesOut.length === 0 && nextBossSpawnMs !== null && nowMs >= nextBossSpawnMs) {
-    const bossType = selectRandomBossType();
+    const bossType = state.upcomingBossType ?? selectRandomBossType();
     const newBoss = createBossFromConfig(BOSS_CONFIGS[bossType], state.desks);
     bossesOut = [newBoss];
     nextBossSpawnMs = null; // reset until despawn
     activeBossDespawnMs = nowMs + getRandomDespawnDuration(bossType);
+    // Clear warning on spawn
+    state.bossWarning = null;
+    state.upcomingBossType = null;
   }
   // If no boss and no timer, schedule next spawn using Manager delay for now
   if (bossesOut.length === 0 && nextBossSpawnMs === null) {
@@ -208,13 +213,45 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   }
   // Despawn active boss when time elapses
   if (bossesOut.length > 0 && activeBossDespawnMs !== null && nowMs >= activeBossDespawnMs) {
-    // Immediately spawn next boss based on probabilities, excluding current type
+    // Schedule next boss to allow a warning window instead of instant spawn
     const currentType = bossesOut[0].type;
     const nextType = selectRandomBossType(currentType);
-    const spawned = createBossFromConfig(BOSS_CONFIGS[nextType], state.desks);
-    bossesOut = [spawned];
-    activeBossDespawnMs = nowMs + getRandomDespawnDuration(nextType);
-    nextBossSpawnMs = null;
+    const warnWindow = BOSS_CONFIGS[nextType].warningTimeMs ?? 2000;
+    bossesOut = [];
+    activeBossDespawnMs = null;
+    nextBossSpawnMs = nowMs + warnWindow;
+    state.bossWarning = null;
+    state.upcomingBossType = nextType;
+  }
+  // Phase 2.5: Update pre-spawn warning if a spawn is scheduled
+  let bossWarning = state.bossWarning ?? null;
+  let upcomingBossType = state.upcomingBossType ?? null;
+  if (bossesOut.length === 0) {
+    if (nextBossSpawnMs === null) {
+      // If nothing scheduled (e.g., game start edge), schedule and set upcoming type
+      const delay = getRandomSpawnDelay(BossType.MANAGER);
+      nextBossSpawnMs = nowMs + delay;
+      upcomingBossType = selectRandomBossType();
+    }
+    if (nextBossSpawnMs !== null) {
+      // Ensure we have an upcoming type
+      if (!upcomingBossType) upcomingBossType = selectRandomBossType();
+      const timeUntil = nextBossSpawnMs - nowMs;
+      const warnWindow = BOSS_CONFIGS[upcomingBossType].warningTimeMs ?? 2000;
+      if (timeUntil > 0 && timeUntil <= warnWindow) {
+        bossWarning = {
+          bossType: upcomingBossType,
+          remainingMs: timeUntil,
+          totalWarningMs: warnWindow,
+          isActive: true,
+        };
+      } else {
+        bossWarning = null;
+      }
+    }
+  } else {
+    bossWarning = null;
+    upcomingBossType = null;
   }
 
   // Phase 2.3: Suspicion update (hybrid mechanics)
@@ -257,6 +294,8 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     activeBossDespawnMs,
     suspicion,
     lastUpdateMs: nowMs,
+    bossWarning,
+    upcomingBossType,
   };
 }
 
