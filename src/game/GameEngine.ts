@@ -62,6 +62,8 @@ export function createInitialState(): GameState {
     nextDistractionCheckMs: performance.now() + 4000,
     lastInterruptionMs: now,
     nextForcedInterruptionMs: now + 20000,
+    lastSnitchMs: null,
+    nextForcedSnitchMs: now + 100000,
   };
 }
 
@@ -432,6 +434,8 @@ export function updateGameState(state: GameState, input: InputState): GameState 
           });
           // Cooldown per snitch
           snitch.lastActionMs = now;
+          state.lastSnitchMs = now;
+          state.nextForcedSnitchMs = now + 100000;
         }
       }
       // Next check in 5 seconds
@@ -626,6 +630,30 @@ export function updateGameState(state: GameState, input: InputState): GameState 
           state.lastInterruptionMs = nowMs;
           state.nextForcedInterruptionMs = nowMs + 20000;
         }
+      }
+    }
+  }
+
+  // Guarantee: force a snitch call after 100s of gaming without one (when no boss is present or even if present, we accelerate next spawn)
+  if (gameMode === 'gaming') {
+    const due = (state.nextForcedSnitchMs ?? (nowMs + 100000)) <= nowMs;
+    if (due) {
+      const anySnitch = coworkers.find((c) => c.type === 'snitch');
+      if (anySnitch) {
+        const reducedDelay = getRandomSpawnDelay(BossType.MANAGER) * 0.25;
+        nextBossSpawnMs = nowMs + reducedDelay;
+        upcomingBossType = selectRandomBossType();
+        nextBossSpawnIsSnitch = true;
+        coworkerWarnings.push({
+          coworkerId: anySnitch.id,
+          type: 'snitch_warning',
+          message: 'Someone called the boss!',
+          position: { x: CANVAS_WIDTH / 2, y: 80 },
+          remainingMs: 1000,
+          scoreReduction: 0,
+        });
+        state.lastSnitchMs = nowMs;
+        state.nextForcedSnitchMs = nowMs + 100000;
       }
     }
   }

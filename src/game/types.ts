@@ -92,6 +92,9 @@ export interface GameState {
   coworkerWarnings?: CoworkerWarning[];
   // Phase 3.3: snitch check cadence
   nextSnitchCheckMs?: number | null;
+  // Snitch guarantee timers
+  lastSnitchMs?: number | null;
+  nextForcedSnitchMs?: number | null;
   // Phase 3.4: conversation lock state and scheduling
   conversationState?: ConversationState | null;
   nextGossipCheckMs?: number | null;
