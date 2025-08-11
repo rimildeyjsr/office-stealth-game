@@ -125,10 +125,10 @@ export const COWORKER_CONFIGS: Record<CoworkerType, CoworkerConfig> = {
   },
   [CoworkerType.SNITCH]: {
     type: CoworkerType.SNITCH,
-    color: '#FFA500',
+    color: '#FFB020',
     size: 16,
-    speed: 1.4,
-    spawnProbability: 0.15,
+    speed: 1.6,
+    spawnProbability: 0.25,
     actionCooldownMs: 30000,
     effectDurationMs: 1000,
   },
@@ -156,6 +156,9 @@ export const COWORKER_SYSTEM = {
   maxActiveCoworkers: 3,
   spawnDelayMs: [2000, 5000] as [number, number],
   despawnDurationMs: [15000, 30000] as [number, number],
+  // Probability per frame that a snitch will bias its next waypoint toward the player's desk
+  // Lower values = more free patrol; higher values = stronger gravitation
+  snitchBiasChancePerFrame: 0.03,
 } as const;
 
 

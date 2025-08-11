@@ -4,7 +4,7 @@ import { createOfficeLayout, getPlayerSeatAnchor, isNearSeatAnchor } from './off
 import { checkCollision, hasLineOfSight } from './collision.ts';
 import { createBossFromConfig, getRandomDespawnDuration, getRandomSpawnDelay, isPlayerDetected, selectRandomBossType, updateBoss } from './boss.ts';
 import { BossType } from './types.ts';
-import { createCoworkerFromConfig, getRandomCoworkerSpawnDelay, updateCoworker, pickRandomCoworkerConfig, checkHelpfulCoworkerAction, maybeStartHelpfulRush, clearExpiredRush, updateRushTargetTowardsPlayer, checkSnitchAction } from './coworker.ts';
+import { createCoworkerFromConfig, getRandomCoworkerSpawnDelay, updateCoworker, pickRandomCoworkerConfig, checkHelpfulCoworkerAction, maybeStartHelpfulRush, clearExpiredRush, updateRushTargetTowardsPlayer, checkSnitchAction, maybeBiasSnitchTowardPlayer } from './coworker.ts';
 
 export interface InputState {
   up: boolean;
@@ -297,6 +297,8 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     .map((c) => clearExpiredRush(c))
     // Keep rush target following player's current position while rushing
     .map((c) => updateRushTargetTowardsPlayer(c, { ...player, position: newPosition }))
+    // Bias snitches to wander near the player during gaming
+    .map((c) => maybeBiasSnitchTowardPlayer(c, { ...player, position: newPosition }, gameMode, state.desks))
     .map((c) => updateCoworker(c, state.desks));
   // Despawn coworkers whose timer elapsed
   coworkers = coworkers.filter((c) => (c.despawnAtMs == null ? true : nowMs < c.despawnAtMs));
@@ -307,12 +309,17 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   // Spawn new coworker when timer elapses and under max
   let nextCoworkerSpawnMs = state.nextCoworkerSpawnMs ?? null;
   if (nextCoworkerSpawnMs !== null && nowMs >= nextCoworkerSpawnMs && coworkers.length < COWORKER_SYSTEM.maxActiveCoworkers) {
-    // Ensure at least one helpful coworker is always present
+    // Ensure at least one snitch and one helpful are always present
     const hasHelpful = coworkers.some((c) => c.type === 'helpful');
-    const cfg = hasHelpful ? pickRandomCoworkerConfig() : COWORKER_CONFIGS.helpful;
-    // Helpful coworker prefers to spawn near player desk area
-    const spawnHint = cfg.type === 'helpful' ? (state.desks.find((d) => d.isPlayerDesk)?.bounds ?? null) : null;
-    const hintPos = spawnHint ? { x: spawnHint.x + spawnHint.width / 2, y: spawnHint.y + spawnHint.height + 20 } : undefined;
+    const hasSnitch = coworkers.some((c) => c.type === 'snitch');
+    let cfg = pickRandomCoworkerConfig();
+    if (!hasSnitch) cfg = COWORKER_CONFIGS.snitch;
+    else if (!hasHelpful) cfg = COWORKER_CONFIGS.helpful;
+    // Helpful and Snitch prefer to spawn near the player desk area to be noticeable
+    const spawnHintBounds = (cfg.type === 'helpful' || cfg.type === 'snitch')
+      ? (state.desks.find((d) => d.isPlayerDesk)?.bounds ?? null)
+      : null;
+    const hintPos = spawnHintBounds ? { x: spawnHintBounds.x + spawnHintBounds.width / 2, y: spawnHintBounds.y + spawnHintBounds.height + 20 } : undefined;
     const newCoworker = createCoworkerFromConfig(cfg, state.desks, hintPos);
     coworkers = [...coworkers, newCoworker];
     // Chain-spawn quickly if under max to ensure presence during playtests

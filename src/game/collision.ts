@@ -15,6 +15,22 @@ export function checkCollision(nextPos: Position, desks: Desk[]): boolean {
   });
 }
 
+// Generic size-aware collision for non-player entities that are drawn from center coordinates
+export function checkEntityCollision(nextCenter: Position, size: number, desks: Desk[]): boolean {
+  const half = size / 2;
+  const rect = { x: nextCenter.x - half, y: nextCenter.y - half, w: size, h: size };
+
+  return desks.some((desk) => {
+    const { x, y, width, height } = desk.bounds;
+    return (
+      rect.x < x + width &&
+      rect.x + rect.w > x &&
+      rect.y < y + height &&
+      rect.y + rect.h > y
+    );
+  });
+}
+
 // Phase 2.3: Line-of-sight check using ray vs desk rectangles
 export function hasLineOfSight(boss: Boss, player: Player, desks: Desk[]): boolean {
   const a = { x: boss.position.x, y: boss.position.y };

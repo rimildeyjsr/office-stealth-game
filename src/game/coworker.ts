@@ -1,11 +1,11 @@
 import { CANVAS_HEIGHT, CANVAS_WIDTH, COWORKER_CONFIGS, COWORKER_SYSTEM } from './constants.ts';
 import type { Boss, Coworker, CoworkerConfig, Desk, GameState, Player, Position } from './types.ts';
 import { CoworkerType } from './types.ts';
-import { hasLineOfSight } from './collision.ts';
+import { checkEntityCollision, hasLineOfSight } from './collision.ts';
 
 type Rect = { x: number; y: number; width: number; height: number };
 
-function computeWalkwayLines(desks: Desk[]): { vLines: number[]; hLines: number[] } {
+function computeWalkwayLines(desks: Desk[], clearance = 10): { vLines: number[]; hLines: number[] } {
   const cols = Array.from(new Set(desks.map((d) => d.bounds.x))).sort((a, b) => a - b);
   const rows = Array.from(new Set(desks.map((d) => d.bounds.y))).sort((a, b) => a - b);
   const deskWidth = desks[0]?.bounds.width ?? 0;
@@ -13,25 +13,25 @@ function computeWalkwayLines(desks: Desk[]): { vLines: number[]; hLines: number[
 
   const vLines: number[] = [];
   for (let i = 0; i < cols.length - 1; i += 1) {
-    const leftEdge = cols[i] + deskWidth;
-    const rightEdge = cols[i + 1];
+    const leftEdge = cols[i] + deskWidth + clearance;
+    const rightEdge = cols[i + 1] - clearance;
     vLines.push((leftEdge + rightEdge) / 2);
   }
   const minX = Math.min(...cols);
   const maxX = Math.max(...cols.map((x) => x + deskWidth));
-  vLines.unshift(minX / 2);
-  vLines.push((maxX + CANVAS_WIDTH) / 2);
+  vLines.unshift((minX + 0) / 2 + clearance);
+  vLines.push(((maxX + CANVAS_WIDTH) / 2) - clearance);
 
   const hLines: number[] = [];
   for (let j = 0; j < rows.length - 1; j += 1) {
-    const topEdge = rows[j] + deskHeight;
-    const bottomEdge = rows[j + 1];
+    const topEdge = rows[j] + deskHeight + clearance;
+    const bottomEdge = rows[j + 1] - clearance;
     hLines.push((topEdge + bottomEdge) / 2);
   }
   const minY = Math.min(...rows);
   const maxY = Math.max(...rows.map((y) => y + deskHeight));
-  hLines.unshift(minY / 2);
-  hLines.push((maxY + CANVAS_HEIGHT) / 2);
+  hLines.unshift((minY + 0) / 2 + clearance);
+  hLines.push(((maxY + CANVAS_HEIGHT) / 2) - clearance);
   return { vLines, hLines };
 }
 
@@ -63,13 +63,20 @@ function segmentIntersectsAny(a: Position, b: Position, obstacles: Rect[]): bool
   return false;
 }
 
-function pickNextTarget(from: Position, vLines: number[], hLines: number[], obstacles: Rect[]): Position {
+function pickNextTarget(from: Position, vLines: number[], hLines: number[], obstacles: Rect[], minClearance = 10): Position {
   const candidates: Position[] = [];
   for (const x of vLines) {
     for (const y of hLines) {
       if (x === from.x && y === from.y) continue;
       const p = { x, y };
-      if (!segmentIntersectsAny(from, p, obstacles)) candidates.push(p);
+      if (!segmentIntersectsAny(from, p, obstacles)) {
+        // also ensure the point itself is not inside or too close to any obstacle
+        const nearObstacle = obstacles.some((r) => (
+          x >= r.x - minClearance && x <= r.x + r.width + minClearance &&
+          y >= r.y - minClearance && y <= r.y + r.height + minClearance
+        ));
+        if (!nearObstacle) candidates.push(p);
+      }
     }
   }
   if (candidates.length === 0) return from;
@@ -96,13 +103,13 @@ function findNearestIntersection(vLines: number[], hLines: number[], pos: Positi
 }
 
 export function createCoworkerFromConfig(config: CoworkerConfig, desks: Desk[], spawnHint?: Position): Coworker {
-  const { vLines, hLines } = computeWalkwayLines(desks);
+  const { vLines, hLines } = computeWalkwayLines(desks, Math.ceil(config.size / 2));
   const obstacles: Rect[] = desks.map((d) => d.bounds);
   const start: Position = spawnHint ? findNearestIntersection(vLines, hLines, spawnHint) : {
     x: vLines[Math.floor(Math.random() * vLines.length)],
     y: hLines[Math.floor(Math.random() * hLines.length)],
   };
-  const next = pickNextTarget(start, vLines, hLines, obstacles);
+  const next = pickNextTarget(start, vLines, hLines, obstacles, Math.ceil(config.size / 2));
   const lifespan = getRandomCoworkerDespawnDuration();
   return {
     id: `coworker-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
@@ -127,19 +134,30 @@ export function updateCoworker(coworker: Coworker, desks: Desk[]): Coworker {
   const speed = coworker.rushTarget ? coworker.speed * 1.8 : coworker.speed;
   const stepX = (dx / dist) * speed;
   const stepY = (dy / dist) * speed;
-  const nextX = coworker.position.x + stepX;
-  const nextY = coworker.position.y + stepY;
+  let nextX = coworker.position.x + stepX;
+  let nextY = coworker.position.y + stepY;
 
   // Bounds clamp for safety
-  const clampedX = Math.max(0, Math.min(CANVAS_WIDTH, nextX));
-  const clampedY = Math.max(0, Math.min(CANVAS_HEIGHT, nextY));
+  const half = coworker.size / 2;
+  let clampedX = Math.max(half, Math.min(CANVAS_WIDTH - half, nextX));
+  let clampedY = Math.max(half, Math.min(CANVAS_HEIGHT - half, nextY));
+
+  // Axis-separated collision against desks using size-aware AABB
+  // Try X movement
+  if (checkEntityCollision({ x: clampedX, y: coworker.position.y }, coworker.size, desks)) {
+    clampedX = coworker.position.x; // cancel X
+  }
+  // Try Y movement
+  if (checkEntityCollision({ x: clampedX, y: clampedY }, coworker.size, desks)) {
+    clampedY = coworker.position.y; // cancel Y
+  }
 
   // If close enough, pick next waypoint
   if (Math.hypot(target.x - clampedX, target.y - clampedY) <= speed) {
-    const { vLines, hLines } = computeWalkwayLines(desks);
+    const { vLines, hLines } = computeWalkwayLines(desks, Math.ceil(coworker.size / 2));
     const obstacles: Rect[] = desks.map((d) => d.bounds);
     const arrived: Position = { x: target.x, y: target.y };
-    const next = coworker.rushTarget ? arrived : pickNextTarget(arrived, vLines, hLines, obstacles);
+    const next = coworker.rushTarget ? arrived : pickNextTarget(arrived, vLines, hLines, obstacles, Math.ceil(coworker.size / 2));
     return {
       ...coworker,
       position: arrived,
@@ -256,6 +274,30 @@ export function updateRushTargetTowardsPlayer(coworker: Coworker, player: Player
     ...coworker,
     rushTarget: { x: player.position.x, y: Math.max(0, player.position.y - 20) },
   };
+}
+
+// Phase 3.3 UX: Make snitches more likely to patrol near the player when gaming
+export function maybeBiasSnitchTowardPlayer(
+  coworker: Coworker,
+  player: Player,
+  gameMode: 'work' | 'gaming',
+  desks: Desk[],
+): Coworker {
+  if (coworker.type !== CoworkerType.SNITCH || gameMode !== 'gaming') return coworker;
+  // If already fairly near, no need to bias
+  const d = Math.hypot(player.position.x - coworker.position.x, player.position.y - coworker.position.y);
+  if (d <= 140) return coworker;
+  // With small per-frame chance, retarget next waypoint toward the nearest walkway point to the player
+  if (Math.random() < (COWORKER_SYSTEM as any).snitchBiasChancePerFrame) {
+    const { vLines, hLines } = computeWalkwayLines(desks);
+    const target = findNearestIntersection(vLines, hLines, player.position);
+    return {
+      ...coworker,
+      patrolRoute: [coworker.position, target],
+      currentTarget: 1,
+    };
+  }
+  return coworker;
 }
 
 
