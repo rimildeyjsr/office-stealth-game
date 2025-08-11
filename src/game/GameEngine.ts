@@ -472,13 +472,13 @@ export function updateGameState(state: GameState, input: InputState): GameState 
             const durationMs = 3000 + Math.floor(Math.random() * 5000);
             const approached = setGossipApproachTarget(g, anchor, state.desks, durationMs + 1000);
             coworkers = coworkers.map((x) => (x.id === approached.id ? approached : x));
-            // Top-of-screen single message with duration
+            // Top-of-screen single message with duration (keep visible throughout lock)
             coworkerWarnings.push({
               coworkerId: g.id,
               type: 'gossip_warning',
               message: `Coworker wants to gossip for ${(durationMs / 1000) | 0}s`,
               position: { x: CANVAS_WIDTH / 2, y: 50 },
-              remainingMs: 1200,
+              remainingMs: durationMs,
               scoreReduction: 0,
             });
             // Start lock immediately
