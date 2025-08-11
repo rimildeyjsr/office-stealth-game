@@ -546,7 +546,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
             question: qText,
             isActive: true,
             startMs: now,
-            timeoutMs: 8000,
+            timeoutMs: 5000,
           };
           d.lastActionMs = now;
           state.lastInterruptionMs = now;
@@ -565,15 +565,6 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     if (nowMs - activeQuestion.startMs >= activeQuestion.timeoutMs) {
       // Ignore path
       nextScore = Math.max(0, nextScore + QUESTION_CHOICES.ignore.scoreChange);
-      // Flash a sleek top message for 3s
-      coworkerWarnings.push({
-        coworkerId: activeQuestion.coworkerId,
-        type: 'gossip_warning',
-        message: 'Coworker needs help',
-        position: { x: CANVAS_WIDTH / 2, y: 50 },
-        remainingMs: 3000,
-        scoreReduction: 0,
-      });
       activeQuestion = null;
     }
   }
@@ -624,7 +615,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
             question: WORK_QUESTIONS[Math.floor(Math.random() * WORK_QUESTIONS.length)],
             isActive: true,
             startMs: nowMs,
-            timeoutMs: 8000,
+            timeoutMs: 5000,
           };
           (d as any).lastActionMs = nowMs;
           state.lastInterruptionMs = nowMs;
