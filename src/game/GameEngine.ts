@@ -4,7 +4,7 @@ import { createOfficeLayout, getPlayerSeatAnchor, isNearSeatAnchor } from './off
 import { checkCollision, hasLineOfSight } from './collision.ts';
 import { createBossFromConfig, getRandomDespawnDuration, getRandomSpawnDelay, isPlayerDetected, selectRandomBossType, updateBoss } from './boss.ts';
 import { BossType } from './types.ts';
-import { createCoworkerFromConfig, getRandomCoworkerSpawnDelay, updateCoworker, pickRandomCoworkerConfig, checkHelpfulCoworkerAction, maybeStartHelpfulRush, clearExpiredRush, updateRushTargetTowardsPlayer, checkSnitchAction, maybeBiasSnitchTowardPlayer } from './coworker.ts';
+import { createCoworkerFromConfig, getRandomCoworkerSpawnDelay, updateCoworker, pickRandomCoworkerConfig, checkHelpfulCoworkerAction, maybeStartHelpfulRush, clearExpiredRush, updateRushTargetTowardsPlayer, checkSnitchAction, maybeBiasSnitchTowardPlayer, checkGossipInterruption } from './coworker.ts';
 
 export interface InputState {
   up: boolean;
@@ -50,6 +50,8 @@ export function createInitialState(): GameState {
     coworkers: [],
     nextCoworkerSpawnMs: now + getRandomCoworkerSpawnDelay(),
     coworkerWarnings: [],
+    conversationState: null,
+    nextGossipCheckMs: performance.now() + 3000,
   };
 }
 
@@ -169,9 +171,14 @@ export function updateGameState(state: GameState, input: InputState): GameState 
 
   // Mode switching: Only allowed when sitting at player desk (idle state cannot toggle)
   if (input.toggleMode && !input._toggleHandled && isSitting) {
+    // Phase 3.4: Block mode switching during active conversation
+    if (state.conversationState?.isActive) {
+      input._toggleHandled = true; // consume toggle
+    } else {
     gameMode = gameMode === 'work' ? 'gaming' : 'work';
     // mark as handled to ensure single toggle per key press
     input._toggleHandled = true;
+    }
   }
 
   // Update boss patrols
@@ -193,7 +200,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   let lastScoreUpdateMs = state.lastScoreUpdateMs ?? performance.now();
   const nowMs = performance.now();
   const deltaTimeMs = Math.max(0, (state.lastUpdateMs ? nowMs - state.lastUpdateMs : 16));
-  if (!isGameOver && gameMode === 'gaming') {
+  if (!isGameOver && gameMode === 'gaming' && !(state.conversationState?.isActive)) {
     const active = state.bosses[0] ?? null;
     if (active) {
       nextScore += calculateScoreIncrease(gameMode, active, { ...player, position: newPosition }, state.suspicion ?? 0, state.desks, deltaTimeMs);
@@ -325,9 +332,11 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     // Ensure at least one snitch and one helpful are always present
     const hasHelpful = coworkers.some((c) => c.type === 'helpful');
     const hasSnitch = coworkers.some((c) => c.type === 'snitch');
+    const hasGossip = coworkers.some((c) => c.type === 'gossip');
     let cfg = pickRandomCoworkerConfig();
     if (!hasSnitch) cfg = COWORKER_CONFIGS.snitch;
     else if (!hasHelpful) cfg = COWORKER_CONFIGS.helpful;
+    else if (!hasGossip) cfg = COWORKER_CONFIGS.gossip;
     // Helpful and Snitch prefer to spawn near the player desk area to be noticeable
     const spawnHintBounds = (cfg.type === 'helpful' || cfg.type === 'snitch')
       ? (state.desks.find((d) => d.isPlayerDesk)?.bounds ?? null)
@@ -447,6 +456,44 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     }
   }
 
+  // Phase 3.4: Gossip interruptions — periodic checks while gaming
+  let conversationState = state.conversationState ?? null;
+  let nextGossipCheckMs = state.nextGossipCheckMs ?? null;
+  if (gameMode === 'gaming') {
+    const now = nowMs;
+    if (nextGossipCheckMs == null || now >= nextGossipCheckMs) {
+      const gossips = coworkers.filter((c) => c.type === 'gossip');
+      if (!conversationState?.isActive) {
+        for (const g of gossips) {
+          const conv = checkGossipInterruption(g, gameMode, conversationState);
+          if (conv) {
+            conversationState = conv;
+            // Start cooldown for this gossip coworker
+            g.lastActionMs = now;
+            break; // only one conversation at a time
+          }
+        }
+      }
+      // Next check in 3 seconds
+      nextGossipCheckMs = now + 3000;
+    }
+  } else {
+    nextGossipCheckMs = null;
+  }
+
+  // While conversation active, block toggle input already handled above, and end after duration
+  if (conversationState?.isActive) {
+    const now = nowMs;
+    if (now - conversationState.startMs >= conversationState.durationMs) {
+      conversationState = null;
+    }
+  }
+
+  // If a conversation just started this frame, freeze scoring for this tick
+  if (!state.conversationState?.isActive && conversationState?.isActive) {
+    nextScore = state.score;
+  }
+
   return {
     ...state,
     player: {
@@ -468,10 +515,12 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     coworkers,
     nextCoworkerSpawnMs,
     coworkerWarnings,
-    nextSnitchCheckMs: state.nextSnitchCheckMs ?? null,
+    nextSnitchCheckMs,
     bossShouts,
     nextBossShoutCheckMs,
     nextBossSpawnIsSnitch,
+    conversationState,
+    nextGossipCheckMs,
   };
 }
 

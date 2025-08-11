@@ -1,5 +1,5 @@
 import { CANVAS_HEIGHT, CANVAS_WIDTH, COWORKER_CONFIGS, COWORKER_SYSTEM } from './constants.ts';
-import type { Boss, Coworker, CoworkerConfig, Desk, GameState, Player, Position } from './types.ts';
+import type { Boss, Coworker, CoworkerConfig, ConversationState, Desk, GameState, Player, Position } from './types.ts';
 import { CoworkerType } from './types.ts';
 import { checkEntityCollision, hasLineOfSight } from './collision.ts';
 
@@ -322,4 +322,27 @@ export function maybeBiasSnitchTowardPlayer(
   return coworker;
 }
 
+
+// Phase 3.4: Gossip interruption logic
+export function checkGossipInterruption(
+  coworker: Coworker,
+  gameMode: 'work' | 'gaming',
+  existingConversation: ConversationState | null,
+): ConversationState | null {
+  if (coworker.type !== CoworkerType.GOSSIP || gameMode !== 'gaming' || existingConversation?.isActive) {
+    return null;
+  }
+  const now = performance.now();
+  const canAct = now - (coworker.lastActionMs ?? 0) > COWORKER_CONFIGS[CoworkerType.GOSSIP].actionCooldownMs;
+  if (canAct && Math.random() < 0.15) {
+    return {
+      isActive: true,
+      coworkerId: coworker.id,
+      startMs: now,
+      durationMs: 2000,
+      message: 'Coworker wants to chat...',
+    };
+  }
+  return null;
+}
 

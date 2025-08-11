@@ -103,6 +103,8 @@ export const GameCanvas: React.FC = () => {
         );
         // Draw coworker overlay warnings (helpful + snitch)
         drawCoworkerWarnings(ctx, stateRef.current as GameState);
+        // Draw conversation overlay if active (Phase 3.4)
+        drawConversationLock(ctx, stateRef.current as GameState);
       }
 
       // FPS meter: log once per second
@@ -160,6 +162,23 @@ function drawCoworkerWarnings(ctx: CanvasRenderingContext2D, state: GameState) {
       ctx.restore();
     }
   }
+}
+
+
+function drawConversationLock(ctx: CanvasRenderingContext2D, state: GameState) {
+  const conv = (state as any).conversationState as GameState['conversationState'];
+  if (!conv || !conv.isActive) return;
+  const alpha = Math.max(0.3, Math.min(1, 1 - ((performance.now() - conv.startMs) / (conv.durationMs)) * 0.2));
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = 'bold 18px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('Coworker wants to chat...', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2);
+  ctx.restore();
 }
 
 
