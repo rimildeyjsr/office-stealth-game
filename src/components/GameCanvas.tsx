@@ -246,28 +246,6 @@ function drawWorkQuestion(ctx: CanvasRenderingContext2D, state: GameState) {
   ctx.restore();
 }
 
-function drawButton(
-  ctx: CanvasRenderingContext2D,
-  label: string,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-) {
-  ctx.fillStyle = '#F3F4F6';
-  ctx.fillRect(x, y, w, h);
-  ctx.strokeStyle = '#111827';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(x, y, w, h);
-  ctx.fillStyle = '#111827';
-  ctx.font = '14px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(label, x + w / 2, y + h / 2);
-}
-
-
-
 function drawBossWarning(
   ctx: CanvasRenderingContext2D,
   warning: BossWarning | null,
