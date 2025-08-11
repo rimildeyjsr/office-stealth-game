@@ -17,12 +17,17 @@ export interface InputState {
 }
 
 export function createInitialState(): GameState {
+  const desks = createOfficeLayout();
+  const playerDesk = desks.find((d) => d.isPlayerDesk) ?? null;
+  const anchor = playerDesk ? getPlayerSeatAnchor(playerDesk) : { x: CANVAS_WIDTH / 2 - PLAYER_SIZE / 2, y: CANVAS_HEIGHT / 2 - PLAYER_SIZE / 2 };
+  // Start 25px to the left of the seat anchor, same Y
+  const startX = Math.max(0, Math.min(CANVAS_WIDTH - PLAYER_SIZE, anchor.x - 25));
+  const startY = Math.max(0, Math.min(CANVAS_HEIGHT - PLAYER_SIZE, anchor.y));
   const player: Player = {
-    position: { x: CANVAS_WIDTH / 2 - PLAYER_SIZE / 2, y: CANVAS_HEIGHT / 2 - PLAYER_SIZE / 2 },
+    position: { x: startX, y: startY },
     speed: PLAYER_SPEED,
   };
 
-  const desks = createOfficeLayout();
   const now = performance.now();
   const initialBoss = createBossFromConfig(BOSS_CONFIGS[BossType.MANAGER], desks);
 
