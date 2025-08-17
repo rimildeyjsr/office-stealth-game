@@ -1,6 +1,6 @@
-import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, BOSS_CONFIGS, SUSPICION_CONFIG, SUSPICION_MECHANICS, COWORKER_SYSTEM, COWORKER_CONFIGS, BOSS_UX, WORK_QUESTIONS, QUESTION_CHOICES } from './constants.ts';
+import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, BOSS_CONFIGS, SUSPICION_CONFIG, SUSPICION_MECHANICS, COWORKER_SYSTEM, COWORKER_CONFIGS, BOSS_UX, WORK_QUESTIONS, QUESTION_CHOICES, CONCENTRATION_CONFIG } from './constants.ts';
 import type { Boss, Coworker, Desk, GameMode, GameState, Player } from './types.ts';
-import { createOfficeLayout, getPlayerSeatAnchor, isNearSeatAnchor } from './office.ts';
+import { createOfficeLayout, getPlayerSeatAnchor, isNearSeatAnchor, isNearCoffeeArea, COFFEE_AREAS } from './office.ts';
 import { checkCollision, hasLineOfSight } from './collision.ts';
 import { createBossFromConfig, getRandomDespawnDuration, getRandomSpawnDelay, isPlayerDetected, selectRandomBossType, updateBoss } from './boss.ts';
 import { BossType, CoworkerType } from './types.ts';
@@ -64,6 +64,16 @@ export function createInitialState(): GameState {
     nextForcedInterruptionMs: now + 20000,
     lastSnitchMs: null,
     nextForcedSnitchMs: now + 100000,
+    // Phase 3.6: Initialize concentration system
+    concentration: {
+      current: CONCENTRATION_CONFIG.maxConcentration,
+      lastUpdateMs: now,
+      recoveryRate: CONCENTRATION_CONFIG.recoveryRate,
+      switchDelayMs: CONCENTRATION_CONFIG.switchDelayMs,
+      recentLosses: [],
+    },
+    pendingToggleMs: null,
+    coffeeAreaCooldowns: {},
   };
 }
 
@@ -187,10 +197,25 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     if (state.conversationState?.isActive || (state.questionLockUntilMs && performance.now() < state.questionLockUntilMs)) {
       input._toggleHandled = true; // consume toggle
     } else {
-    gameMode = gameMode === 'work' ? 'gaming' : 'work';
-    // mark as handled to ensure single toggle per key press
-    input._toggleHandled = true;
+      // Phase 3.6: Concentration-based mode switch delay
+      const concentration = state.concentration.current;
+      const hasDelay = concentration < CONCENTRATION_CONFIG.lowThreshold;
+      
+      if (hasDelay) {
+        // Store delayed toggle request
+        state.pendingToggleMs = performance.now() + CONCENTRATION_CONFIG.switchDelayMs;
+      } else {
+        // Immediate toggle
+        gameMode = gameMode === 'work' ? 'gaming' : 'work';
+      }
+      input._toggleHandled = true;
     }
+  }
+
+  // Phase 3.6: Process delayed toggles
+  if (state.pendingToggleMs && performance.now() >= state.pendingToggleMs) {
+    gameMode = gameMode === 'work' ? 'gaming' : 'work';
+    state.pendingToggleMs = null;
   }
 
   // Update boss patrols
@@ -212,6 +237,9 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   let lastScoreUpdateMs = state.lastScoreUpdateMs ?? performance.now();
   const nowMs = performance.now();
   const deltaTimeMs = Math.max(0, (state.lastUpdateMs ? nowMs - state.lastUpdateMs : 16));
+
+  // Phase 3.6: Initialize concentration variable early for use throughout function
+  let concentration = { ...state.concentration };
   if (!isGameOver && gameMode === 'gaming' && !(state.conversationState?.isActive)) {
     if (state.questionLockUntilMs && performance.now() < state.questionLockUntilMs) {
       // score frozen during answer lock
@@ -595,6 +623,10 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     if (nowMs - activeQuestion.startMs >= activeQuestion.timeoutMs) {
       // Ignore path
       nextScore = Math.max(0, nextScore + QUESTION_CHOICES.ignore.scoreChange);
+      // Phase 3.6: Apply concentration penalty for auto-ignore and track loss
+      const penalty = CONCENTRATION_CONFIG.interruptionPenalties.questionIgnore;
+      concentration.current = Math.max(0, concentration.current - penalty);
+      concentration.recentLosses.push({ amount: penalty, timestampMs: nowMs });
       activeQuestion = null;
     }
   }
@@ -705,9 +737,73 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     }
   }
 
+  // Phase 3.6: Update concentration system
+  const concentrationDeltaMs = nowMs - concentration.lastUpdateMs;
+  const concentrationDeltaSeconds = concentrationDeltaMs / 1000;
+  
+  // Automatic recovery at +5% per second when not interrupted, minus passive drain
+  if (!conversationState?.isActive && !activeQuestion?.isActive) {
+    const netRecoveryRate = concentration.recoveryRate - CONCENTRATION_CONFIG.passiveDrainRate;
+    concentration.current = Math.max(0, Math.min(
+      CONCENTRATION_CONFIG.maxConcentration,
+      concentration.current + (netRecoveryRate * concentrationDeltaSeconds)
+    ));
+  } else {
+    // During interruptions, only apply passive drain (no recovery)
+    concentration.current = Math.max(0, 
+      concentration.current - (CONCENTRATION_CONFIG.passiveDrainRate * concentrationDeltaSeconds)
+    );
+  }
+  
+  // Phase 3.6: Coffee break area restoration with cooldowns
+  const nearCoffeeArea = isNearCoffeeArea(newPosition);
+  let coffeeAreaCooldowns = { ...(state.coffeeAreaCooldowns ?? {}) };
+  if (nearCoffeeArea && !isSitting) {
+    const areaKey = nearCoffeeArea.label;
+    const lastUsed = coffeeAreaCooldowns[areaKey] ?? 0;
+    const canUse = nowMs >= lastUsed;
+    
+    if (canUse) {
+      // Clean up old losses (older than 5 minutes)
+      const fiveMinutesAgo = nowMs - (5 * 60 * 1000);
+      concentration.recentLosses = concentration.recentLosses.filter(loss => loss.timestampMs > fiveMinutesAgo);
+      
+      // Calculate how much concentration we can restore from recent losses
+      const totalRecentLosses = concentration.recentLosses.reduce((sum, loss) => sum + loss.amount, 0);
+      const maxRestoration = Math.min(nearCoffeeArea.restoration, totalRecentLosses);
+      
+      // Restore concentration, prioritizing recent losses but capped by area restoration amount
+      const actualRestoration = Math.min(maxRestoration, CONCENTRATION_CONFIG.maxConcentration - concentration.current);
+      concentration.current += actualRestoration;
+      
+      // Remove the restored amount from recent losses (oldest first)
+      let remainingToRemove = actualRestoration;
+      concentration.recentLosses = concentration.recentLosses.filter(loss => {
+        if (remainingToRemove <= 0) return true;
+        if (loss.amount <= remainingToRemove) {
+          remainingToRemove -= loss.amount;
+          return false; // Remove this loss entirely
+        } else {
+          loss.amount -= remainingToRemove;
+          remainingToRemove = 0;
+          return true; // Keep this loss with reduced amount
+        }
+      });
+      
+      // Set cooldown
+      coffeeAreaCooldowns[areaKey] = nowMs + nearCoffeeArea.cooldownMs;
+    }
+  }
+  
+  concentration.lastUpdateMs = nowMs;
+
   // If a conversation just started this frame, freeze scoring for this tick
   if (!state.conversationState?.isActive && conversationState?.isActive) {
     nextScore = state.score;
+    // Phase 3.6: Apply gossip concentration penalty and track loss
+    const penalty = CONCENTRATION_CONFIG.interruptionPenalties.gossipChat;
+    concentration.current = Math.max(0, concentration.current - penalty);
+    concentration.recentLosses.push({ amount: penalty, timestampMs: nowMs });
   }
 
   return {
@@ -740,6 +836,9 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     activeQuestion,
     questionLockUntilMs,
     nextDistractionCheckMs,
+    concentration,
+    pendingToggleMs: state.pendingToggleMs,
+    coffeeAreaCooldowns,
   };
 }
 
@@ -756,6 +855,36 @@ export function drawFrame(ctx: CanvasRenderingContext2D, state: GameState, frame
     ctx.fillStyle = desk.isPlayerDesk ? '#374151' : '#1F2937'; // slightly different shades
     const { x, y, width, height } = desk.bounds;
     ctx.fillRect(x, y, width, height);
+  }
+
+  // Phase 3.6: Draw coffee break areas with cooldown status
+  const nowMs = performance.now();
+  for (const area of COFFEE_AREAS) {
+    const lastUsed = (state.coffeeAreaCooldowns ?? {})[area.label] ?? 0;
+    const onCooldown = nowMs < lastUsed;
+    
+    // Area color based on availability
+    ctx.fillStyle = onCooldown ? '#654321' : '#8B4513'; // Darker brown when on cooldown
+    ctx.fillRect(area.x, area.y, area.width, area.height);
+    
+    // Label with restoration amount
+    ctx.fillStyle = onCooldown ? '#999999' : '#FFFFFF';
+    ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const label = `${area.label}\n+${area.restoration}`;
+    const lines = label.split('\n');
+    ctx.fillText(lines[0], area.x + area.width / 2, area.y + area.height / 2 - 8);
+    ctx.fillText(lines[1], area.x + area.width / 2, area.y + area.height / 2 + 8);
+    
+    // Cooldown timer if applicable
+    if (onCooldown) {
+      const remainingMs = lastUsed - nowMs;
+      const remainingSec = Math.ceil(remainingMs / 1000);
+      ctx.fillStyle = '#FF6666';
+      ctx.font = '10px sans-serif';
+      ctx.fillText(`${remainingSec}s`, area.x + area.width / 2, area.y + area.height - 8);
+    }
   }
 
   // Draw seat anchor indicator for player desk
@@ -885,29 +1014,46 @@ export function drawFrame(ctx: CanvasRenderingContext2D, state: GameState, frame
 
   // Score display moved to GameCanvas overlay
 
-  // Phase 2.3: Suspicion meter (top-right)
-  const meterX = CANVAS_WIDTH - 220;
-  const meterY = 50;
+  // Phase 2.3 & 3.6: Right-aligned meters, moved down 20px from top
   const meterWidth = 200;
   const meterHeight = 20;
+  const meterX = CANVAS_WIDTH - meterWidth - 12; // Right-aligned with 12px margin
+  const meterY = 15; // Moved up 5px more (20 - 5)
   const suspicion = Math.max(0, Math.min(100, state.suspicion ?? 0));
-  // Label above the bar
+  
+  // Suspicion meter
   ctx.fillStyle = '#FFFFFF';
   ctx.font = '14px monospace';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.fillText(`Suspicion: ${Math.round(suspicion)}%`, meterX, meterY);
-  const barY = meterY + 18; // place the bar below the text with small gap
+  const suspicionBarY = meterY + 18; // place the bar below the text with small gap
   // Background
   ctx.fillStyle = '#333333';
-  ctx.fillRect(meterX, barY, meterWidth, meterHeight);
+  ctx.fillRect(meterX, suspicionBarY, meterWidth, meterHeight);
   // Fill
-  const fillWidth = (suspicion / 100) * meterWidth;
+  const suspicionFillWidth = (suspicion / 100) * meterWidth;
   if (suspicion < 26) ctx.fillStyle = '#00FF00';
   else if (suspicion < 51) ctx.fillStyle = '#FFFF00';
   else if (suspicion < 76) ctx.fillStyle = '#FF8C00';
   else ctx.fillStyle = '#FF0000';
-  ctx.fillRect(meterX, barY, fillWidth, meterHeight);
+  ctx.fillRect(meterX, suspicionBarY, suspicionFillWidth, meterHeight);
+
+  // Phase 3.6: Concentration meter (below suspicion meter)
+  const concentration = Math.max(0, Math.min(100, state.concentration.current));
+  const concY = suspicionBarY + meterHeight + 10; // 10px gap below suspicion bar
+  // Label
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = '14px monospace';
+  ctx.fillText(`Concentration: ${Math.round(concentration)}%`, meterX, concY);
+  const concBarY = concY + 18;
+  // Background
+  ctx.fillStyle = '#333333';
+  ctx.fillRect(meterX, concBarY, meterWidth, meterHeight);
+  // Orange fill for concentration
+  const concFillWidth = (concentration / 100) * meterWidth;
+  ctx.fillStyle = '#FF8C00'; // Orange color
+  ctx.fillRect(meterX, concBarY, concFillWidth, meterHeight);
 
   if (frameText) {
     ctx.fillStyle = '#FFFFFF';

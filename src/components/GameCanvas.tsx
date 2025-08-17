@@ -122,6 +122,15 @@ export const GameCanvas: React.FC = () => {
           // Answer choice
           (stateRef.current as any).score = Math.max(0, (stateRef.current as any).score + QUESTION_CHOICES.answer.scoreChange);
           (stateRef.current as any).questionLockUntilMs = performance.now() + QUESTION_CHOICES.answer.lockDurationMs;
+          // Phase 3.6: Apply concentration penalty for answering and track loss
+          const currentConc = (stateRef.current as any).concentration?.current ?? 100;
+          const penalty = 15; // CONCENTRATION_CONFIG.interruptionPenalties.questionAnswer
+          const recentLosses = (stateRef.current as any).concentration?.recentLosses ?? [];
+          (stateRef.current as any).concentration = {
+            ...(stateRef.current as any).concentration,
+            current: Math.max(0, currentConc - penalty),
+            recentLosses: [...recentLosses, { amount: penalty, timestampMs: performance.now() }]
+          };
           // Flash "Helping..." for the lock duration
           const cw = ((stateRef.current as any).coworkerWarnings ?? []) as any[];
           (stateRef.current as any).coworkerWarnings = [
@@ -139,6 +148,15 @@ export const GameCanvas: React.FC = () => {
         } else if (inRect(ignoreZone.x, ignoreZone.y, ignoreZone.w, ignoreZone.h)) {
           // Ignore choice
           (stateRef.current as any).score = Math.max(0, (stateRef.current as any).score + QUESTION_CHOICES.ignore.scoreChange);
+          // Phase 3.6: Apply concentration penalty for ignoring and track loss
+          const currentConc = (stateRef.current as any).concentration?.current ?? 100;
+          const penalty = 10; // CONCENTRATION_CONFIG.interruptionPenalties.questionIgnore
+          const recentLosses = (stateRef.current as any).concentration?.recentLosses ?? [];
+          (stateRef.current as any).concentration = {
+            ...(stateRef.current as any).concentration,
+            current: Math.max(0, currentConc - penalty),
+            recentLosses: [...recentLosses, { amount: penalty, timestampMs: performance.now() }]
+          };
           (stateRef.current as any).activeQuestion = null;
         }
       };
@@ -150,6 +168,15 @@ export const GameCanvas: React.FC = () => {
         if (e.key.toLowerCase() === 'h') {
           (stateRef.current as any).score = Math.max(0, (stateRef.current as any).score + QUESTION_CHOICES.answer.scoreChange);
           (stateRef.current as any).questionLockUntilMs = performance.now() + QUESTION_CHOICES.answer.lockDurationMs;
+          // Phase 3.6: Apply concentration penalty for answering and track loss
+          const currentConc = (stateRef.current as any).concentration?.current ?? 100;
+          const penalty = 15; // CONCENTRATION_CONFIG.interruptionPenalties.questionAnswer
+          const recentLosses = (stateRef.current as any).concentration?.recentLosses ?? [];
+          (stateRef.current as any).concentration = {
+            ...(stateRef.current as any).concentration,
+            current: Math.max(0, currentConc - penalty),
+            recentLosses: [...recentLosses, { amount: penalty, timestampMs: performance.now() }]
+          };
           // Flash "Helping..." for the lock duration
           const cw = ((stateRef.current as any).coworkerWarnings ?? []) as any[];
           (stateRef.current as any).coworkerWarnings = [
@@ -167,6 +194,15 @@ export const GameCanvas: React.FC = () => {
         }
         if (e.key.toLowerCase() === 'i') {
           (stateRef.current as any).score = Math.max(0, (stateRef.current as any).score + QUESTION_CHOICES.ignore.scoreChange);
+          // Phase 3.6: Apply concentration penalty for ignoring and track loss
+          const currentConc = (stateRef.current as any).concentration?.current ?? 100;
+          const penalty = 10; // CONCENTRATION_CONFIG.interruptionPenalties.questionIgnore
+          const recentLosses = (stateRef.current as any).concentration?.recentLosses ?? [];
+          (stateRef.current as any).concentration = {
+            ...(stateRef.current as any).concentration,
+            current: Math.max(0, currentConc - penalty),
+            recentLosses: [...recentLosses, { amount: penalty, timestampMs: performance.now() }]
+          };
           (stateRef.current as any).activeQuestion = null;
         }
       };

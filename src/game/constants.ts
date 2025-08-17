@@ -207,5 +207,19 @@ export const QUESTION_CHOICES: Record<'answer' | 'ignore', QuestionChoice> = {
   },
 };
 
+// Phase 3.6: Concentration system configuration
+export const CONCENTRATION_CONFIG = {
+  maxConcentration: 100,
+  recoveryRate: 5, // per second
+  passiveDrainRate: 5 / 30, // 5 points per 30 seconds (converted to per second)
+  lowThreshold: 50,
+  switchDelayMs: 500,
+  interruptionPenalties: {
+    gossipChat: 20,
+    questionAnswer: 15,
+    questionIgnore: 10,
+  },
+} as const;
+
 
 

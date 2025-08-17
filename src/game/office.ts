@@ -1,5 +1,5 @@
 import { CANVAS_HEIGHT, CANVAS_WIDTH, DESK_COLS, DESK_HEIGHT, DESK_ROWS, DESK_WIDTH, WALKWAY_X, WALKWAY_Y } from './constants.ts';
-import type { Desk, Position } from './types.ts';
+import type { CoffeeArea, Desk, Position } from './types.ts';
 
 export function createOfficeLayout(): Desk[] {
   // Center a 2x3 grid of desks with walkways
@@ -37,6 +37,23 @@ export function isNearSeatAnchor(playerPos: Position, anchor: Position, threshol
   const dx = playerPos.x - anchor.x;
   const dy = playerPos.y - anchor.y;
   return Math.sqrt(dx * dx + dy * dy) <= threshold;
+}
+
+// Phase 3.6: Coffee break areas for concentration restoration
+export const COFFEE_AREAS: CoffeeArea[] = [
+  { x: 40, y: CANVAS_HEIGHT - 100, width: 80, height: 50, label: 'Coffee', restoration: 20, cooldownMs: 5000 },
+  { x: CANVAS_WIDTH - 120, y: CANVAS_HEIGHT - 100, width: 80, height: 50, label: 'Break Room', restoration: 40, cooldownMs: 15000 },
+];
+
+export function isNearCoffeeArea(playerPos: Position): CoffeeArea | null {
+  for (const area of COFFEE_AREAS) {
+    const inArea = playerPos.x >= area.x - 20 &&
+                   playerPos.x <= area.x + area.width + 20 &&
+                   playerPos.y >= area.y - 20 &&
+                   playerPos.y <= area.y + area.height + 20;
+    if (inArea) return area;
+  }
+  return null;
 }
 
 

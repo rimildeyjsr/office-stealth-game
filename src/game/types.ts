@@ -105,6 +105,10 @@ export interface GameState {
   // Interruption guarantee timers
   lastInterruptionMs?: number | null;
   nextForcedInterruptionMs?: number | null;
+  // Phase 3.6: Concentration system state
+  concentration: ConcentrationState;
+  pendingToggleMs?: number | null; // for delayed mode switching
+  coffeeAreaCooldowns?: Record<string, number>; // area label -> next available time
 }
 
 // Phase 2.5: warning interface
@@ -206,5 +210,24 @@ export interface QuestionChoice {
   label: string;
   scoreChange: number;
   lockDurationMs: number;
+}
+
+// Phase 3.6: Concentration system
+export interface ConcentrationState {
+  current: number; // 0-100
+  lastUpdateMs: number;
+  recoveryRate: number; // per second
+  switchDelayMs: number; // additional delay when low
+  recentLosses: Array<{ amount: number; timestampMs: number }>; // track recent concentration losses
+}
+
+export interface CoffeeArea {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  label: string;
+  restoration: number;
+  cooldownMs: number;
 }
 
