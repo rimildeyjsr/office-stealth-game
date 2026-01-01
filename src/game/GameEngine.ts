@@ -141,10 +141,12 @@ export function updateGameState(state: GameState, input: InputState): GameState 
 
   const hasMovementInput = !!(input.up || input.down || input.left || input.right);
 
-  // Standing up on movement
+  // Standing up on movement - also switch to work mode (can't game while walking)
   let isSitting = player.isSitting ?? false;
+  let gameMode = state.gameMode;
   if (isSitting && hasMovementInput) {
     isSitting = false;
+    gameMode = 'work'; // automatically stop gaming when standing up
   }
 
   if (!isSitting) {
@@ -172,8 +174,6 @@ export function updateGameState(state: GameState, input: InputState): GameState 
 
   // Sitting logic: press E near seat anchor to sit (snap to anchor). Movement stands up.
   const playerDesk = state.desks.find((d) => d.isPlayerDesk) ?? null;
-  // Track current mode; may be overridden below when sitting
-  let gameMode = state.gameMode;
   if (!isSitting && input.interact && playerDesk) {
     const anchor = getPlayerSeatAnchor(playerDesk);
     if (isNearSeatAnchor(newPosition, anchor)) {
@@ -240,7 +240,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
 
   // Phase 3.6: Initialize concentration variable early for use throughout function
   let concentration = { ...state.concentration };
-  if (!isGameOver && gameMode === 'gaming' && !(state.conversationState?.isActive)) {
+  if (!isGameOver && gameMode === 'gaming' && isSitting && !(state.conversationState?.isActive)) {
     if (state.questionLockUntilMs && performance.now() < state.questionLockUntilMs) {
       // score frozen during answer lock
     } else {
@@ -439,7 +439,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   const snitches = coworkers.filter((c) => c.type === 'snitch');
   // If a boss is already incoming (pre-spawn warning active), snitches cannot call the boss
   const bossIncomingSoon = !!bossWarning && !!bossWarning.isActive;
-  if (gameMode === 'gaming' && !bossIncomingSoon) {
+  if (gameMode === 'gaming' && isSitting && !bossIncomingSoon) {
     const now = nowMs;
     if (nextSnitchCheckMs == null || now >= nextSnitchCheckMs) {
       for (const snitch of snitches) {
@@ -513,7 +513,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   // Phase 3.4: Gossip simplified flow — approach player, show top message, lock for 3–8s
   let conversationState = state.conversationState ?? null;
   let nextGossipCheckMs = state.nextGossipCheckMs ?? null;
-  if (gameMode === 'gaming' && (bossesOut.length > 0)) {
+  if (gameMode === 'gaming' && isSitting && (bossesOut.length > 0)) {
     const now = nowMs;
     if (nextGossipCheckMs == null || now >= nextGossipCheckMs) {
       const gossips = coworkers.filter((c) => c.type === 'gossip');
@@ -573,7 +573,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   let activeQuestion = state.activeQuestion ?? null;
   let questionLockUntilMs = state.questionLockUntilMs ?? null;
   let nextDistractionCheckMs = state.nextDistractionCheckMs ?? null;
-  if (gameMode === 'gaming' && !(conversationState?.isActive)) {
+  if (gameMode === 'gaming' && isSitting && !(conversationState?.isActive)) {
     const now = nowMs;
     if (nextDistractionCheckMs == null || now >= nextDistractionCheckMs) {
       const distractions = coworkers.filter((c) => c.type === 'distraction');
@@ -640,7 +640,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   }
 
   // Guarantee: if 20 seconds pass in gaming with a boss present and no interruptions (gossip or question), force one
-  if (gameMode === 'gaming' && bossesOut.length > 0) {
+  if (gameMode === 'gaming' && isSitting && bossesOut.length > 0) {
     const lastInt = state.lastInterruptionMs ?? nowMs;
     if ((state.nextForcedInterruptionMs ?? (lastInt + 20000)) <= nowMs && !conversationState?.isActive && !(activeQuestion?.isActive)) {
       const hasGossip = coworkers.some((c) => c.type === 'gossip');
@@ -714,7 +714,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   }
 
   // Guarantee: force a snitch call after 100s of gaming without one (when no boss is present or even if present, we accelerate next spawn)
-  if (gameMode === 'gaming') {
+  if (gameMode === 'gaming' && isSitting) {
     const due = (state.nextForcedSnitchMs ?? (nowMs + 100000)) <= nowMs;
     if (due) {
       const anySnitch = coworkers.find((c) => c.type === 'snitch');
@@ -740,18 +740,23 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   // Phase 3.6: Update concentration system
   const concentrationDeltaMs = nowMs - concentration.lastUpdateMs;
   const concentrationDeltaSeconds = concentrationDeltaMs / 1000;
-  
-  // Automatic recovery at +5% per second when not interrupted, minus passive drain
-  if (!conversationState?.isActive && !activeQuestion?.isActive) {
-    const netRecoveryRate = concentration.recoveryRate - CONCENTRATION_CONFIG.passiveDrainRate;
-    concentration.current = Math.max(0, Math.min(
-      CONCENTRATION_CONFIG.maxConcentration,
-      concentration.current + (netRecoveryRate * concentrationDeltaSeconds)
-    ));
-  } else {
-    // During interruptions, only apply passive drain (no recovery)
-    concentration.current = Math.max(0, 
+
+  if (gameMode === 'gaming' && isSitting) {
+    // Drain concentration only while actively gaming (sitting + gaming mode)
+    concentration.current = Math.max(0,
       concentration.current - (CONCENTRATION_CONFIG.passiveDrainRate * concentrationDeltaSeconds)
+    );
+  } else if (!isSitting) {
+    // Walking around (idle) - recover faster (taking a break)
+    concentration.current = Math.min(
+      CONCENTRATION_CONFIG.maxConcentration,
+      concentration.current + (CONCENTRATION_CONFIG.recoveryRateIdle * concentrationDeltaSeconds)
+    );
+  } else {
+    // Sitting but not gaming (working mode) - recover slower
+    concentration.current = Math.min(
+      CONCENTRATION_CONFIG.maxConcentration,
+      concentration.current + (CONCENTRATION_CONFIG.recoveryRateWorking * concentrationDeltaSeconds)
     );
   }
   
