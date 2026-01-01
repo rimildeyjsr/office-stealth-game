@@ -201,8 +201,8 @@ export const QUESTION_CHOICES: Record<'answer' | 'ignore', QuestionChoice> = {
   },
   ignore: {
     action: 'ignore',
-    label: 'Ignore (-5 pts)',
-    scoreChange: -5,
+    label: 'Ignore (-50% score)',
+    scoreChange: -0.5, // Special: multiplier to halve current score
     lockDurationMs: 0,
   },
 };

@@ -146,8 +146,8 @@ export const GameCanvas: React.FC = () => {
           ];
           (stateRef.current as any).activeQuestion = null;
         } else if (inRect(ignoreZone.x, ignoreZone.y, ignoreZone.w, ignoreZone.h)) {
-          // Ignore choice
-          (stateRef.current as any).score = Math.max(0, (stateRef.current as any).score + QUESTION_CHOICES.ignore.scoreChange);
+          // Ignore choice - halve the current score
+          (stateRef.current as any).score = Math.max(0, Math.floor((stateRef.current as any).score * 0.5));
           // Phase 3.6: Apply concentration penalty for ignoring and track loss
           const currentConc = (stateRef.current as any).concentration?.current ?? 100;
           const penalty = 10; // CONCENTRATION_CONFIG.interruptionPenalties.questionIgnore
@@ -193,7 +193,8 @@ export const GameCanvas: React.FC = () => {
           (stateRef.current as any).activeQuestion = null;
         }
         if (e.key.toLowerCase() === 'i') {
-          (stateRef.current as any).score = Math.max(0, (stateRef.current as any).score + QUESTION_CHOICES.ignore.scoreChange);
+          // Ignore choice - halve the current score
+          (stateRef.current as any).score = Math.max(0, Math.floor((stateRef.current as any).score * 0.5));
           // Phase 3.6: Apply concentration penalty for ignoring and track loss
           const currentConc = (stateRef.current as any).concentration?.current ?? 100;
           const penalty = 10; // CONCENTRATION_CONFIG.interruptionPenalties.questionIgnore

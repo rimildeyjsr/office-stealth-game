@@ -621,8 +621,8 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   // Auto-resolve question on timeout with ignore behavior
   if (activeQuestion && activeQuestion.isActive) {
     if (nowMs - activeQuestion.startMs >= activeQuestion.timeoutMs) {
-      // Ignore path
-      nextScore = Math.max(0, nextScore + QUESTION_CHOICES.ignore.scoreChange);
+      // Ignore path - halve the current score
+      nextScore = Math.max(0, Math.floor(nextScore * 0.5));
       // Phase 3.6: Apply concentration penalty for auto-ignore and track loss
       const penalty = CONCENTRATION_CONFIG.interruptionPenalties.questionIgnore;
       concentration.current = Math.max(0, concentration.current - penalty);
