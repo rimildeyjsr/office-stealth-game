@@ -201,7 +201,8 @@ export function updateBoss(boss: Boss & PatrolMeta): Boss & PatrolMeta {
 }
 
 export function isPlayerDetected(player: Player, boss: Boss, gameMode: GameMode): boolean {
-  if (gameMode !== 'gaming') return false;
+  // Only detectable when sitting AND gaming - walking around is always safe
+  if (gameMode !== 'gaming' || !player.isSitting) return false;
   const distance = Math.hypot(player.position.x - boss.position.x, player.position.y - boss.position.y);
   return distance <= boss.detectionRadius;
 }
