@@ -70,6 +70,7 @@ export interface GameState {
   gameMode: GameMode;
   score: number;
   isGameOver: boolean;
+  showStartScreen: boolean; // Phase 5: Start screen before gameplay
   desks: Desk[];
   modeOverlayStartMs?: number | null; // for 200ms fade on mode switch
   lastScoreUpdateMs?: number | null;

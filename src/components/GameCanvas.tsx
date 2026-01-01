@@ -78,33 +78,37 @@ export const GameCanvas: React.FC = () => {
       }
       // Draw base frame
       drawFrame(ctx, stateRef.current);
-      // Optional: LOS visualization
-      const boss = stateRef.current.bosses[0] as Boss | undefined;
-      if (boss && !stateRef.current.isGameOver) {
-        drawLineOfSight(ctx, boss, stateRef.current.player, stateRef.current.desks);
-      }
 
-      // Enhanced score + multiplier overlay
-      drawScoreAndMultiplier(
-        ctx,
-        Math.round(stateRef.current.score),
-        stateRef.current.suspicion ?? 0,
-        boss ?? null,
-        stateRef.current.player,
-        stateRef.current.desks,
-      );
+      // Skip all overlays when start screen is showing
+      if (!stateRef.current.showStartScreen) {
+        // Optional: LOS visualization
+        const boss = stateRef.current.bosses[0] as Boss | undefined;
+        if (boss && !stateRef.current.isGameOver) {
+          drawLineOfSight(ctx, boss, stateRef.current.player, stateRef.current.desks);
+        }
 
-      // Enhanced warning overlay (boss pre-spawn)
-      if (!stateRef.current.isGameOver) {
-        drawBossWarning(
+        // Enhanced score + multiplier overlay
+        drawScoreAndMultiplier(
           ctx,
-          (stateRef.current as any).bossWarning as BossWarning | null,
-          CANVAS_WIDTH,
+          Math.round(stateRef.current.score),
+          stateRef.current.suspicion ?? 0,
+          boss ?? null,
+          stateRef.current.player,
+          stateRef.current.desks,
         );
-        // Draw coworker overlay warnings (helpful + snitch + gossip countdown)
-        drawCoworkerWarnings(ctx, stateRef.current as GameState);
-        // Phase 3.5: question modal overlay
-        drawWorkQuestion(ctx, stateRef.current as GameState);
+
+        // Enhanced warning overlay (boss pre-spawn)
+        if (!stateRef.current.isGameOver) {
+          drawBossWarning(
+            ctx,
+            (stateRef.current as any).bossWarning as BossWarning | null,
+            CANVAS_WIDTH,
+          );
+          // Draw coworker overlay warnings (helpful + snitch + gossip countdown)
+          drawCoworkerWarnings(ctx, stateRef.current as GameState);
+          // Phase 3.5: question modal overlay
+          drawWorkQuestion(ctx, stateRef.current as GameState);
+        }
       }
 
       // Mouse input for question choices

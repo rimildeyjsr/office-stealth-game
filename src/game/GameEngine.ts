@@ -1,4 +1,4 @@
-import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, BOSS_CONFIGS, SUSPICION_CONFIG, SUSPICION_MECHANICS, COWORKER_SYSTEM, COWORKER_CONFIGS, BOSS_UX, WORK_QUESTIONS, QUESTION_CHOICES, CONCENTRATION_CONFIG } from './constants.ts';
+import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, BOSS_CONFIGS, SUSPICION_CONFIG, SUSPICION_MECHANICS, COWORKER_SYSTEM, COWORKER_CONFIGS, BOSS_UX, WORK_QUESTIONS, CONCENTRATION_CONFIG } from './constants.ts';
 import type { Boss, Coworker, Desk, GameMode, GameState, Player } from './types.ts';
 import { createOfficeLayout, getPlayerSeatAnchor, isNearSeatAnchor, isNearCoffeeArea, COFFEE_AREAS } from './office.ts';
 import { checkCollision, hasLineOfSight } from './collision.ts';
@@ -38,6 +38,7 @@ export function createInitialState(): GameState {
     gameMode: 'work',
     score: 0,
     isGameOver: false,
+    showStartScreen: true, // Show instructions on first load
     desks,
     modeOverlayStartMs: null,
     // Init to now so score intervals start immediate in gaming mode
@@ -68,7 +69,7 @@ export function createInitialState(): GameState {
     concentration: {
       current: CONCENTRATION_CONFIG.maxConcentration,
       lastUpdateMs: now,
-      recoveryRate: CONCENTRATION_CONFIG.recoveryRate,
+      recoveryRate: CONCENTRATION_CONFIG.recoveryRateWorking,
       switchDelayMs: CONCENTRATION_CONFIG.switchDelayMs,
       recentLosses: [],
     },
@@ -133,6 +134,15 @@ export function calculateScoreIncrease(
 }
 
 export function updateGameState(state: GameState, input: InputState): GameState {
+  // Handle start screen - pressing space dismisses it and starts the game
+  if (state.showStartScreen) {
+    if (input.toggleMode) {
+      return { ...state, showStartScreen: false };
+    }
+    // Freeze all game logic while start screen is shown
+    return state;
+  }
+
   const { player } = state;
 
   // Movement based on input
@@ -854,6 +864,86 @@ export function drawFrame(ctx: CanvasRenderingContext2D, state: GameState, frame
   // Background
   ctx.fillStyle = '#111827'; // Tailwind gray-900 like background
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+  // Start screen - draw early and return to prevent any game elements from showing
+  if (state.showStartScreen) {
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+    const centerX = CANVAS_WIDTH / 2;
+    let y = 60;
+
+    // Title
+    ctx.fillStyle = '#10B981';
+    ctx.font = 'bold 32px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText('OFFICE STEALTH', centerX, y);
+    y += 50;
+
+    ctx.fillStyle = '#9CA3AF';
+    ctx.font = '14px monospace';
+    ctx.fillText('Slack off without getting caught!', centerX, y);
+    y += 50;
+
+    // Controls section
+    ctx.fillStyle = '#F59E0B';
+    ctx.font = 'bold 18px monospace';
+    ctx.fillText('— CONTROLS —', centerX, y);
+    y += 35;
+
+    ctx.fillStyle = '#E5E7EB';
+    ctx.font = '14px monospace';
+    const controls = [
+      ['WASD', 'Move around'],
+      ['E', 'Sit at your desk'],
+      ['SPACE', 'Toggle Work / Gaming mode'],
+      ['H', 'Help coworker (+10 pts)'],
+      ['I', 'Ignore coworker (-50% score)'],
+      ['R', 'Restart game'],
+    ];
+    // Offset left from center for the two-column layout
+    const keyCol = centerX - 80;
+    const descCol = centerX - 20;
+    for (const [key, desc] of controls) {
+      ctx.fillStyle = '#10B981';
+      ctx.textAlign = 'right';
+      ctx.fillText(key, keyCol, y);
+      ctx.fillStyle = '#E5E7EB';
+      ctx.textAlign = 'left';
+      ctx.fillText(desc, descCol, y);
+      y += 24;
+    }
+    y += 20;
+
+    // Scoring section
+    ctx.fillStyle = '#F59E0B';
+    ctx.font = 'bold 18px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('— SCORING —', centerX, y);
+    y += 35;
+
+    ctx.fillStyle = '#E5E7EB';
+    ctx.font = '14px monospace';
+    const scoring = [
+      'Game while sitting at your desk to earn points',
+      'Higher suspicion = higher multiplier = more risk!',
+      'Walking around is safe but earns nothing',
+      'Avoid bosses - they will catch you gaming!',
+      'Coworkers may help, distract, or snitch on you',
+    ];
+    for (const line of scoring) {
+      ctx.fillText(line, centerX, y);
+      y += 22;
+    }
+    y += 30;
+
+    // Start prompt
+    ctx.fillStyle = '#10B981';
+    ctx.font = 'bold 20px monospace';
+    ctx.fillText('Press SPACE to Start', centerX, y);
+    return; // Don't draw anything else
+  }
 
   // Draw desks
   for (const desk of state.desks) {
