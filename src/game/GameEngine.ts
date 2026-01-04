@@ -31,7 +31,12 @@ export async function initializeSprites(): Promise<void> {
     { name: 'boss-director', path: '/src/assets/sprites/boss-director.png' },
     { name: 'boss-vp', path: '/src/assets/sprites/boss-vp.png' },
     { name: 'boss-ceo', path: '/src/assets/sprites/boss-ceo.png' },
-    // Add more sprites here as they become available
+    { name: 'coworker-helpful', path: '/src/assets/sprites/coworker-helpful.png' },
+    { name: 'coworker-snitch', path: '/src/assets/sprites/coworker-snitch.png' },
+    { name: 'coworker-gossip', path: '/src/assets/sprites/coworker-gossip.png' },
+    { name: 'coworker-distraction', path: '/src/assets/sprites/coworker-distraction.png' },
+    { name: 'coffee-machine', path: '/src/assets/sprites/coffee-machine.png' },
+    { name: 'break-room', path: '/src/assets/sprites/break-room.png' },
   ];
 
   try {
@@ -1026,31 +1031,76 @@ export function drawFrame(ctx: CanvasRenderingContext2D, state: GameState, frame
 
   // Phase 3.6: Draw coffee break areas with cooldown status
   const nowMs = performance.now();
+  const coffeeMachineSprite = spriteLoader.getSprite('coffee-machine');
+  const breakRoomSprite = spriteLoader.getSprite('break-room');
+
   for (const area of COFFEE_AREAS) {
     const lastUsed = (state.coffeeAreaCooldowns ?? {})[area.label] ?? 0;
     const onCooldown = nowMs < lastUsed;
-    
-    // Area color based on availability
-    ctx.fillStyle = onCooldown ? '#654321' : '#8B4513'; // Darker brown when on cooldown
-    ctx.fillRect(area.x, area.y, area.width, area.height);
-    
-    // Label with restoration amount
-    ctx.fillStyle = onCooldown ? '#999999' : '#FFFFFF';
-    ctx.font = '11px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const label = `${area.label}\n+${area.restoration}`;
-    const lines = label.split('\n');
-    ctx.fillText(lines[0], area.x + area.width / 2, area.y + area.height / 2 - 8);
-    ctx.fillText(lines[1], area.x + area.width / 2, area.y + area.height / 2 + 8);
-    
-    // Cooldown timer if applicable
-    if (onCooldown) {
-      const remainingMs = lastUsed - nowMs;
-      const remainingSec = Math.ceil(remainingMs / 1000);
-      ctx.fillStyle = '#FF6666';
-      ctx.font = '10px sans-serif';
-      ctx.fillText(`${remainingSec}s`, area.x + area.width / 2, area.y + area.height - 8);
+
+    // Get appropriate sprite based on area label
+    const areaSprite = area.label === 'Coffee' ? coffeeMachineSprite : breakRoomSprite;
+
+    if (areaSprite) {
+      // Render sprite (scale up 2.5x for better visibility)
+      const spriteScale = 2.5;
+      const scaledWidth = area.width * spriteScale;
+      const scaledHeight = area.height * spriteScale;
+      const offsetX = (area.width - scaledWidth) / 2;
+      const offsetY = (area.height - scaledHeight) / 2;
+
+      // Dim sprite if on cooldown
+      if (onCooldown) {
+        ctx.save();
+        ctx.globalAlpha = 0.5;
+        ctx.drawImage(areaSprite, area.x + offsetX, area.y + offsetY, scaledWidth, scaledHeight);
+        ctx.restore();
+      } else {
+        ctx.drawImage(areaSprite, area.x + offsetX, area.y + offsetY, scaledWidth, scaledHeight);
+      }
+
+      // Draw text BELOW the sprite instead of on top
+      const textY = area.y + scaledHeight + offsetY + 15; // Position below sprite
+
+      // Label with restoration amount
+      ctx.fillStyle = onCooldown ? '#999999' : '#FFFFFF';
+      ctx.font = 'bold 14px sans-serif'; // Bigger font
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(area.label, area.x + area.width / 2, textY);
+      ctx.fillText(`+${area.restoration}`, area.x + area.width / 2, textY + 16);
+
+      // Cooldown timer if applicable
+      if (onCooldown) {
+        const remainingMs = lastUsed - nowMs;
+        const remainingSec = Math.ceil(remainingMs / 1000);
+        ctx.fillStyle = '#FF6666';
+        ctx.font = 'bold 12px sans-serif';
+        ctx.fillText(`${remainingSec}s`, area.x + area.width / 2, textY + 32);
+      }
+    } else {
+      // Fallback to colored rectangle
+      ctx.fillStyle = onCooldown ? '#654321' : '#8B4513';
+      ctx.fillRect(area.x, area.y, area.width, area.height);
+
+      // Label with restoration amount (original position for fallback)
+      ctx.fillStyle = onCooldown ? '#999999' : '#FFFFFF';
+      ctx.font = '11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const label = `${area.label}\n+${area.restoration}`;
+      const lines = label.split('\n');
+      ctx.fillText(lines[0], area.x + area.width / 2, area.y + area.height / 2 - 8);
+      ctx.fillText(lines[1], area.x + area.width / 2, area.y + area.height / 2 + 8);
+
+      // Cooldown timer if applicable
+      if (onCooldown) {
+        const remainingMs = lastUsed - nowMs;
+        const remainingSec = Math.ceil(remainingMs / 1000);
+        ctx.fillStyle = '#FF6666';
+        ctx.font = '10px sans-serif';
+        ctx.fillText(`${remainingSec}s`, area.x + area.width / 2, area.y + area.height - 8);
+      }
     }
   }
 
@@ -1151,8 +1201,28 @@ export function drawFrame(ctx: CanvasRenderingContext2D, state: GameState, frame
   // Draw coworkers (below player, above desks)
   for (const coworker of state.coworkers ?? []) {
     const size = coworker.size;
-    ctx.fillStyle = coworker.color;
-    ctx.fillRect(coworker.position.x - size / 2, coworker.position.y - size / 2, size, size);
+    const color = coworker.color;
+
+    // Get sprite based on coworker type
+    const coworkerSpriteName = `coworker-${coworker.type}`;
+    const coworkerSprite = spriteLoader.getSprite(coworkerSpriteName);
+
+    if (coworkerSprite) {
+      // Scale coworkers to be visible but smaller than player (80px)
+      const spriteSize = 80;
+      // Render coworker sprite centered on position
+      ctx.drawImage(
+        coworkerSprite,
+        coworker.position.x - spriteSize / 2,
+        coworker.position.y - spriteSize / 2,
+        spriteSize,
+        spriteSize
+      );
+    } else {
+      // Fallback to colored square
+      ctx.fillStyle = color;
+      ctx.fillRect(coworker.position.x - size / 2, coworker.position.y - size / 2, size, size);
+    }
   }
 
   // Draw coworker warning bubbles above helpful coworkers
