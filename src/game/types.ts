@@ -109,6 +109,8 @@ export interface GameState {
   concentration: ConcentrationState;
   pendingToggleMs?: number | null; // for delayed mode switching
   coffeeAreaCooldowns?: Record<string, number>; // area label -> next available time
+  // Phase System State
+  phaseState: PhaseState;
 }
 
 // Phase 2.5: warning interface
@@ -229,5 +231,23 @@ export interface CoffeeArea {
   label: string;
   restoration: number;
   cooldownMs: number;
+}
+
+// Phase System Types
+export interface GamePhase {
+  id: number;
+  name: string;
+  goal: number; // score needed to complete this phase
+  enabledBosses: BossType[]; // which boss types can spawn
+  enabledCoworkers: CoworkerType[]; // which coworker types can spawn
+  concentrationEnabled: boolean; // whether concentration system is active
+  unlockMessage: string; // message shown when transitioning to next phase
+}
+
+export interface PhaseState {
+  currentPhase: number; // 1-5
+  phaseScore: number; // score accumulated in current phase
+  totalScore: number; // all-time score across all phases
+  showTransition: boolean; // whether to show phase transition screen
 }
 

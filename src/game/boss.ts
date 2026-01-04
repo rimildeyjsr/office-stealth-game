@@ -207,9 +207,15 @@ export function isPlayerDetected(player: Player, boss: Boss, gameMode: GameMode)
 }
 
 // Phase 2.2: probability-based boss selection and spawn delay helpers
-export function selectRandomBossType(exclude?: typeof BossType[keyof typeof BossType]): typeof BossType[keyof typeof BossType] {
+export function selectRandomBossType(exclude?: typeof BossType[keyof typeof BossType], allowedTypes?: typeof BossType[keyof typeof BossType][]): typeof BossType[keyof typeof BossType] {
   const random = Math.random();
-  const configs = Object.values(BOSS_CONFIGS).filter((c) => (exclude ? c.type !== exclude : true));
+  let configs = Object.values(BOSS_CONFIGS).filter((c) => (exclude ? c.type !== exclude : true));
+
+  // Filter by allowed types if provided (for phase restrictions)
+  if (allowedTypes && allowedTypes.length > 0) {
+    configs = configs.filter((c) => allowedTypes.includes(c.type));
+  }
+
   const totalProb = configs.reduce((sum, cfg) => sum + cfg.spawnProbability, 0);
   if (configs.length === 0 || totalProb === 0) {
     return BossType.MANAGER;

@@ -1,9 +1,11 @@
-import { useEffect, useRef } from 'react';
-import { CANVAS_HEIGHT, CANVAS_WIDTH, QUESTION_CHOICES } from '../game/constants.ts';
-import { calculateDynamicMultiplier, createInitialState, drawFrame, updateGameState } from '../game/GameEngine.ts';
+import { useEffect, useRef, useState } from 'react';
+import { CANVAS_HEIGHT, CANVAS_WIDTH, QUESTION_CHOICES, PHASES } from '../game/constants.ts';
+import { calculateDynamicMultiplier, createInitialState, drawFrame, updateGameState, checkPhaseCompletion, advancePhase } from '../game/GameEngine.ts';
 import type { Boss, BossWarning, Desk, GameState, Player } from '../game/types.ts';
 import { hasLineOfSight } from '../game/collision.ts';
 import { WARNING_CONFIG } from '../game/constants.ts';
+import { PhaseTransition } from './PhaseTransition.tsx';
+import { TutorialOverlay } from './TutorialOverlay.tsx';
 
 type Key = 'KeyW' | 'KeyA' | 'KeyS' | 'KeyD' | 'KeyE' | 'Space' | 'KeyR';
 
@@ -19,10 +21,29 @@ export const GameCanvas: React.FC = () => {
   const frameCountRef = useRef(0);
   const lastLogRef = useRef<number>(performance.now());
 
+  // Phase system state
+  const [showTutorial, setShowTutorial] = useState(true);
+  const [showPhaseTransition, setShowPhaseTransition] = useState(true); // Start with transition for Phase 1
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const code = e.code as Key | string;
       const isSpace = code === 'Space' || e.key === ' ' || e.key === 'Spacebar';
+
+      // Handle phase transition continuation
+      if (isSpace && showPhaseTransition) {
+        setShowPhaseTransition(false);
+        stateRef.current = {
+          ...stateRef.current,
+          phaseState: {
+            ...stateRef.current.phaseState,
+            showTransition: false,
+          },
+        };
+        e.preventDefault();
+        return;
+      }
+
       if (code === 'KeyW') inputRef.current.up = true;
       if (code === 'KeyS') inputRef.current.down = true;
       if (code === 'KeyA') inputRef.current.left = true;
@@ -37,6 +58,8 @@ export const GameCanvas: React.FC = () => {
         stateRef.current = createInitialState();
         inputRef.current = { up: false, down: false, left: false, right: false, interact: false, toggleMode: false } as any;
         togglePrevRef.current = false;
+        setShowTutorial(true);
+        setShowPhaseTransition(true); // Show Phase 1 intro again
       }
     };
     const handleKeyUp = (e: KeyboardEvent) => {
@@ -55,7 +78,7 @@ export const GameCanvas: React.FC = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
+  }, [showPhaseTransition]); // Add dependency so handlers update when phase transition changes
 
   useEffect(() => {
     let rafId = 0;
@@ -65,16 +88,27 @@ export const GameCanvas: React.FC = () => {
     if (!ctx) return;
 
     const loop = () => {
-      const prevMode = stateRef.current.gameMode;
-      // Edge-detect Space: only consider rising edge as a toggle
-      const toggleNow = !!inputRef.current.toggleMode;
-      const togglePrev = togglePrevRef.current;
-      const risingEdge = toggleNow && !togglePrev;
-      togglePrevRef.current = toggleNow;
-      const input = { ...inputRef.current, toggleMode: risingEdge } as typeof inputRef.current;
-      stateRef.current = updateGameState(stateRef.current, input);
-      if (stateRef.current.gameMode !== prevMode) {
-        stateRef.current.modeOverlayStartMs = performance.now();
+      // Pause game updates when showing phase transition
+      if (!showPhaseTransition) {
+        const prevMode = stateRef.current.gameMode;
+        // Edge-detect Space: only consider rising edge as a toggle
+        const toggleNow = !!inputRef.current.toggleMode;
+        const togglePrev = togglePrevRef.current;
+        const risingEdge = toggleNow && !togglePrev;
+        togglePrevRef.current = toggleNow;
+        const input = { ...inputRef.current, toggleMode: risingEdge } as typeof inputRef.current;
+        stateRef.current = updateGameState(stateRef.current, input);
+        if (stateRef.current.gameMode !== prevMode) {
+          stateRef.current.modeOverlayStartMs = performance.now();
+        }
+
+        // Phase System: Check for phase completion
+        if (!stateRef.current.isGameOver) {
+          if (checkPhaseCompletion(stateRef.current.phaseState)) {
+            stateRef.current = advancePhase(stateRef.current);
+            setShowPhaseTransition(true); // Show transition screen
+          }
+        }
       }
       // Draw base frame
       drawFrame(ctx, stateRef.current);
@@ -221,11 +255,37 @@ export const GameCanvas: React.FC = () => {
     };
     rafId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(rafId);
-  }, []);
+  }, [showPhaseTransition]);
 
   return (
     <div className="w-full min-h-screen flex items-center justify-center bg-gray-900">
       <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} className="bg-gray-800 rounded shadow-lg" />
+
+      {/* Phase Transition Overlay */}
+      {showPhaseTransition && (
+        <PhaseTransition
+          phaseState={stateRef.current.phaseState}
+          isStartOfPhase={stateRef.current.phaseState.phaseScore === 0}
+          onContinue={() => {
+            setShowPhaseTransition(false);
+            stateRef.current = {
+              ...stateRef.current,
+              phaseState: {
+                ...stateRef.current.phaseState,
+                showTransition: false,
+              },
+            };
+          }}
+        />
+      )}
+
+      {/* Tutorial Overlay (Phase 1 only) */}
+      {showTutorial && stateRef.current.phaseState.currentPhase === 1 && !stateRef.current.isGameOver && !showPhaseTransition && (
+        <TutorialOverlay
+          gameState={stateRef.current}
+          onSkip={() => setShowTutorial(false)}
+        />
+      )}
     </div>
   );
 };

@@ -189,8 +189,14 @@ export function updateCoworker(coworker: Coworker, desks: Desk[]): Coworker {
   return { ...coworker, position: { x: clampedX, y: clampedY } };
 }
 
-export function pickRandomCoworkerConfig(): CoworkerConfig {
-  const configs = Object.values(COWORKER_CONFIGS);
+export function pickRandomCoworkerConfig(allowedTypes?: typeof CoworkerType[keyof typeof CoworkerType][]): CoworkerConfig {
+  let configs = Object.values(COWORKER_CONFIGS);
+
+  // Filter by allowed types if provided (for phase restrictions)
+  if (allowedTypes && allowedTypes.length > 0) {
+    configs = configs.filter((c) => allowedTypes.includes(c.type));
+  }
+
   const totalProb = configs.reduce((sum, cfg) => sum + cfg.spawnProbability, 0);
   let r = Math.random() * (totalProb || 1);
   for (const cfg of configs) {

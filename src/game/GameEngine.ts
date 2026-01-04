@@ -1,4 +1,4 @@
-import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, BOSS_CONFIGS, SUSPICION_CONFIG, SUSPICION_MECHANICS, COWORKER_SYSTEM, COWORKER_CONFIGS, BOSS_UX, WORK_QUESTIONS, QUESTION_CHOICES, CONCENTRATION_CONFIG } from './constants.ts';
+import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, BOSS_CONFIGS, SUSPICION_CONFIG, SUSPICION_MECHANICS, COWORKER_SYSTEM, COWORKER_CONFIGS, BOSS_UX, WORK_QUESTIONS, QUESTION_CHOICES, CONCENTRATION_CONFIG, PHASES } from './constants.ts';
 import type { Boss, Coworker, Desk, GameMode, GameState, Player } from './types.ts';
 import { createOfficeLayout, getPlayerSeatAnchor, isNearSeatAnchor, isNearCoffeeArea, COFFEE_AREAS } from './office.ts';
 import { checkCollision, hasLineOfSight } from './collision.ts';
@@ -74,6 +74,13 @@ export function createInitialState(): GameState {
     },
     pendingToggleMs: null,
     coffeeAreaCooldowns: {},
+    // Phase System: Initialize at phase 1 with transition showing
+    phaseState: {
+      currentPhase: 1,
+      phaseScore: 0,
+      totalScore: 0,
+      showTransition: true, // Show intro screen at start
+    },
   };
 }
 
@@ -130,6 +137,91 @@ export function calculateScoreIncrease(
   const { totalMultiplier } = calculateDynamicMultiplier(suspicion, boss, player, gameMode as GameMode, desks);
   const basePointsPerSecond = boss.basePointsPerSecond;
   return basePointsPerSecond * totalMultiplier * deltaSeconds;
+}
+
+// Phase System: Check if current phase goal is met
+export function checkPhaseCompletion(phaseState: { currentPhase: number; phaseScore: number; totalScore: number }): boolean {
+  const currentPhase = PHASES[phaseState.currentPhase - 1];
+  if (!currentPhase) return false;
+  return phaseState.phaseScore >= currentPhase.goal;
+}
+
+// Phase System: Advance to next phase (resets game state)
+export function advancePhase(state: GameState): GameState {
+  const nextPhaseNumber = state.phaseState.currentPhase + 1;
+  if (nextPhaseNumber > PHASES.length) {
+    // Already at max phase
+    return state;
+  }
+
+  // Create a fresh game state
+  const now = performance.now();
+  const desks = state.desks; // Keep the same office layout
+  const playerDesk = desks.find((d) => d.isPlayerDesk) ?? null;
+  const anchor = playerDesk ? getPlayerSeatAnchor(playerDesk) : { x: CANVAS_WIDTH / 2 - PLAYER_SIZE / 2, y: CANVAS_HEIGHT / 2 - PLAYER_SIZE / 2 };
+  const startX = Math.max(0, Math.min(CANVAS_WIDTH - PLAYER_SIZE, anchor.x - 25));
+  const startY = Math.max(0, Math.min(CANVAS_HEIGHT - PLAYER_SIZE, anchor.y));
+
+  // Get enabled bosses for new phase
+  const nextPhase = PHASES[nextPhaseNumber - 1];
+  const enabledBosses = nextPhase?.enabledBosses ?? [BossType.MANAGER];
+  const initialBossType = enabledBosses[0] ?? BossType.MANAGER;
+  const initialBoss = createBossFromConfig(BOSS_CONFIGS[initialBossType], desks);
+
+  return {
+    // Reset player position
+    player: {
+      position: { x: startX, y: startY },
+      speed: PLAYER_SPEED,
+    },
+    // Reset bosses
+    bosses: [initialBoss],
+    gameMode: 'work',
+    score: 0, // Reset score display
+    isGameOver: false,
+    desks,
+    modeOverlayStartMs: null,
+    lastScoreUpdateMs: now,
+    nextBossSpawnMs: null,
+    activeBossDespawnMs: now + getRandomDespawnDuration(initialBossType),
+    suspicion: 0,
+    lastUpdateMs: now,
+    bossWarning: null,
+    upcomingBossType: null,
+    bossShouts: [],
+    nextBossShoutCheckMs: now + BOSS_UX.shoutCheckMs,
+    nextBossSpawnIsSnitch: null,
+    // Reset coworkers
+    coworkers: [],
+    nextCoworkerSpawnMs: now + getRandomCoworkerSpawnDelay(),
+    coworkerWarnings: [],
+    conversationState: null,
+    nextGossipCheckMs: now + 3000,
+    activeQuestion: null,
+    questionLockUntilMs: null,
+    nextDistractionCheckMs: now + 4000,
+    lastInterruptionMs: now,
+    nextForcedInterruptionMs: now + 20000,
+    lastSnitchMs: null,
+    nextForcedSnitchMs: now + 100000,
+    // Reset concentration
+    concentration: {
+      current: CONCENTRATION_CONFIG.maxConcentration,
+      lastUpdateMs: now,
+      recoveryRate: CONCENTRATION_CONFIG.recoveryRate,
+      switchDelayMs: CONCENTRATION_CONFIG.switchDelayMs,
+      recentLosses: [],
+    },
+    pendingToggleMs: null,
+    coffeeAreaCooldowns: {},
+    // Keep phase progression and total score
+    phaseState: {
+      currentPhase: nextPhaseNumber,
+      phaseScore: 0, // Reset phase score for new phase
+      totalScore: state.phaseState.totalScore, // Keep total score
+      showTransition: true,
+    },
+  };
 }
 
 export function updateGameState(state: GameState, input: InputState): GameState {
@@ -240,24 +332,36 @@ export function updateGameState(state: GameState, input: InputState): GameState 
 
   // Phase 3.6: Initialize concentration variable early for use throughout function
   let concentration = { ...state.concentration };
+
+  // Phase System: Track phase and total score
+  let phaseState = { ...state.phaseState };
+  let scoreIncrease = 0;
+
   if (!isGameOver && gameMode === 'gaming' && !(state.conversationState?.isActive)) {
     if (state.questionLockUntilMs && performance.now() < state.questionLockUntilMs) {
       // score frozen during answer lock
     } else {
     const active = state.bosses[0] ?? null;
     if (active) {
-      nextScore += calculateScoreIncrease(gameMode, active, { ...player, position: newPosition }, state.suspicion ?? 0, state.desks, deltaTimeMs);
+      scoreIncrease = calculateScoreIncrease(gameMode, active, { ...player, position: newPosition }, state.suspicion ?? 0, state.desks, deltaTimeMs);
     } else {
       // Easy period: score at 50% of Manager base rate without multipliers
       const deltaSeconds = deltaTimeMs / 1000;
       const base = BOSS_CONFIGS[BossType.MANAGER].basePointsPerSecond;
-      nextScore += (base * 0.5) * deltaSeconds;
+      scoreIncrease = (base * 0.5) * deltaSeconds;
     }
+    nextScore += scoreIncrease;
+    phaseState.phaseScore += scoreIncrease;
+    phaseState.totalScore += scoreIncrease;
     }
   }
   lastScoreUpdateMs = nowMs;
 
   // Phase 2.2: Boss spawning logic (single active boss)
+  // Phase System: Get enabled boss types for current phase
+  const currentPhase = PHASES[phaseState.currentPhase - 1];
+  const enabledBosses = currentPhase?.enabledBosses ?? [BossType.MANAGER];
+
   let bossesOut = nextBosses;
   let nextBossSpawnMs = state.nextBossSpawnMs ?? null;
   let activeBossDespawnMs = state.activeBossDespawnMs ?? null;
@@ -265,7 +369,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   let justSpawnedFromSnitch = false;
   // Spawn when timer elapses and no active boss
   if (bossesOut.length === 0 && nextBossSpawnMs !== null && nowMs >= nextBossSpawnMs) {
-    const bossType = state.upcomingBossType ?? selectRandomBossType();
+    const bossType = state.upcomingBossType ?? selectRandomBossType(undefined, enabledBosses);
     const newBoss = createBossFromConfig(BOSS_CONFIGS[bossType], state.desks);
     bossesOut = [newBoss];
     nextBossSpawnMs = null; // reset until despawn
@@ -287,7 +391,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   if (bossesOut.length > 0 && activeBossDespawnMs !== null && nowMs >= activeBossDespawnMs) {
     // Introduce real cool-off period with no boss
     const currentType = bossesOut[0].type;
-    const nextType = selectRandomBossType(currentType);
+    const nextType = selectRandomBossType(currentType, enabledBosses);
     const downtime = getRandomSpawnDelay(BossType.MANAGER); // 8–15s by current config
     bossesOut = [];
     activeBossDespawnMs = null;
@@ -304,11 +408,11 @@ export function updateGameState(state: GameState, input: InputState): GameState 
       // Use fixed 1s window for warning visibility just before spawn
       const delay = getRandomSpawnDelay(BossType.MANAGER);
       nextBossSpawnMs = nowMs + delay;
-      upcomingBossType = selectRandomBossType();
+      upcomingBossType = selectRandomBossType(undefined, enabledBosses);
     }
     if (nextBossSpawnMs !== null) {
       // Ensure we have an upcoming type
-      if (!upcomingBossType) upcomingBossType = selectRandomBossType();
+      if (!upcomingBossType) upcomingBossType = selectRandomBossType(undefined, enabledBosses);
       const timeUntil = nextBossSpawnMs - nowMs;
       const warnWindow = 1000; // show warning only in the last 1s
       if (timeUntil > 0 && timeUntil <= warnWindow) {
@@ -371,23 +475,26 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     coworkers = coworkers.slice(0, COWORKER_SYSTEM.maxActiveCoworkers);
   }
   // Spawn new coworker when timer elapses and under max
+  // Phase System: Get enabled coworker types for current phase
+  const enabledCoworkers = currentPhase?.enabledCoworkers ?? [];
+
   let nextCoworkerSpawnMs = state.nextCoworkerSpawnMs ?? null;
-  if (nextCoworkerSpawnMs !== null && nowMs >= nextCoworkerSpawnMs && coworkers.length < COWORKER_SYSTEM.maxActiveCoworkers) {
-    // Ensure at least one snitch and one helpful are always present;
+  if (nextCoworkerSpawnMs !== null && nowMs >= nextCoworkerSpawnMs && coworkers.length < COWORKER_SYSTEM.maxActiveCoworkers && enabledCoworkers.length > 0) {
+    // Ensure at least one snitch and one helpful are always present (if enabled in phase);
     // then ensure either gossip or distraction is present (randomly prefer the missing one).
     const hasHelpful = coworkers.some((c) => c.type === 'helpful');
     const hasSnitch = coworkers.some((c) => c.type === 'snitch');
     const hasGossip = coworkers.some((c) => c.type === 'gossip');
     const hasDistraction = coworkers.some((c) => c.type === 'distraction');
-    let cfg = pickRandomCoworkerConfig();
-    if (!hasSnitch) cfg = COWORKER_CONFIGS.snitch;
-    else if (!hasHelpful) cfg = COWORKER_CONFIGS.helpful;
-    else if (!hasGossip || !hasDistraction) {
+    let cfg = pickRandomCoworkerConfig(enabledCoworkers);
+    if (!hasSnitch && enabledCoworkers.includes(CoworkerType.SNITCH)) cfg = COWORKER_CONFIGS.snitch;
+    else if (!hasHelpful && enabledCoworkers.includes(CoworkerType.HELPFUL)) cfg = COWORKER_CONFIGS.helpful;
+    else if ((!hasGossip && enabledCoworkers.includes(CoworkerType.GOSSIP)) || (!hasDistraction && enabledCoworkers.includes(CoworkerType.DISTRACTION))) {
       // Choose whichever is missing; if both missing pick randomly
-      if (!hasGossip && !hasDistraction) {
+      if (!hasGossip && !hasDistraction && enabledCoworkers.includes(CoworkerType.GOSSIP) && enabledCoworkers.includes(CoworkerType.DISTRACTION)) {
         cfg = Math.random() < 0.5 ? COWORKER_CONFIGS.gossip : COWORKER_CONFIGS.distraction;
-      } else if (!hasGossip) cfg = COWORKER_CONFIGS.gossip;
-      else cfg = COWORKER_CONFIGS.distraction;
+      } else if (!hasGossip && enabledCoworkers.includes(CoworkerType.GOSSIP)) cfg = COWORKER_CONFIGS.gossip;
+      else if (!hasDistraction && enabledCoworkers.includes(CoworkerType.DISTRACTION)) cfg = COWORKER_CONFIGS.distraction;
     }
     // Helpful and Snitch prefer to spawn near the player desk area to be noticeable
     const spawnHintBounds = (cfg.type === 'helpful' || cfg.type === 'snitch')
@@ -738,27 +845,35 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   }
 
   // Phase 3.6: Update concentration system
-  const concentrationDeltaMs = nowMs - concentration.lastUpdateMs;
-  const concentrationDeltaSeconds = concentrationDeltaMs / 1000;
-  
-  // Automatic recovery at +5% per second when not interrupted, minus passive drain
-  if (!conversationState?.isActive && !activeQuestion?.isActive) {
-    const netRecoveryRate = concentration.recoveryRate - CONCENTRATION_CONFIG.passiveDrainRate;
-    concentration.current = Math.max(0, Math.min(
-      CONCENTRATION_CONFIG.maxConcentration,
-      concentration.current + (netRecoveryRate * concentrationDeltaSeconds)
-    ));
+  // Phase System: Only apply concentration mechanics if enabled in current phase
+  const concentrationEnabled = currentPhase?.concentrationEnabled ?? false;
+
+  if (concentrationEnabled) {
+    const concentrationDeltaMs = nowMs - concentration.lastUpdateMs;
+    const concentrationDeltaSeconds = concentrationDeltaMs / 1000;
+
+    // Automatic recovery at +5% per second when not interrupted, minus passive drain
+    if (!conversationState?.isActive && !activeQuestion?.isActive) {
+      const netRecoveryRate = concentration.recoveryRate - CONCENTRATION_CONFIG.passiveDrainRate;
+      concentration.current = Math.max(0, Math.min(
+        CONCENTRATION_CONFIG.maxConcentration,
+        concentration.current + (netRecoveryRate * concentrationDeltaSeconds)
+      ));
+    } else {
+      // During interruptions, only apply passive drain (no recovery)
+      concentration.current = Math.max(0,
+        concentration.current - (CONCENTRATION_CONFIG.passiveDrainRate * concentrationDeltaSeconds)
+      );
+    }
   } else {
-    // During interruptions, only apply passive drain (no recovery)
-    concentration.current = Math.max(0, 
-      concentration.current - (CONCENTRATION_CONFIG.passiveDrainRate * concentrationDeltaSeconds)
-    );
+    // Keep concentration fixed at 100% when system is disabled
+    concentration.current = CONCENTRATION_CONFIG.maxConcentration;
   }
   
   // Phase 3.6: Coffee break area restoration with cooldowns
   const nearCoffeeArea = isNearCoffeeArea(newPosition);
   let coffeeAreaCooldowns = { ...(state.coffeeAreaCooldowns ?? {}) };
-  if (nearCoffeeArea && !isSitting) {
+  if (concentrationEnabled && nearCoffeeArea && !isSitting) {
     const areaKey = nearCoffeeArea.label;
     const lastUsed = coffeeAreaCooldowns[areaKey] ?? 0;
     const canUse = nowMs >= lastUsed;
@@ -839,6 +954,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
     concentration,
     pendingToggleMs: state.pendingToggleMs,
     coffeeAreaCooldowns,
+    phaseState,
   };
 }
 

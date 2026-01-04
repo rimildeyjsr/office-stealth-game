@@ -221,5 +221,56 @@ export const CONCENTRATION_CONFIG = {
   },
 } as const;
 
+// Phase System Configuration
+import type { GamePhase } from './types.ts';
+
+export const PHASES: GamePhase[] = [
+  {
+    id: 1,
+    name: 'First Day Tutorial',
+    goal: 500,
+    enabledBosses: [BossType.MANAGER],
+    enabledCoworkers: [],
+    concentrationEnabled: false,
+    unlockMessage: 'Watch the SUSPICION meter! Gaming when visible to bosses increases it. At 100% you\'re caught!',
+  },
+  {
+    id: 2,
+    name: 'Morning Shift',
+    goal: 2000,
+    enabledBosses: [BossType.MANAGER, BossType.DIRECTOR],
+    enabledCoworkers: [CoworkerType.HELPFUL],
+    concentrationEnabled: false,
+    unlockMessage: 'HELPFUL coworkers (green) will warn you when bosses approach. Stay alert!',
+  },
+  {
+    id: 3,
+    name: 'Office Politics',
+    goal: 5000,
+    enabledBosses: [BossType.MANAGER, BossType.DIRECTOR, BossType.VP],
+    enabledCoworkers: [CoworkerType.HELPFUL, CoworkerType.SNITCH],
+    concentrationEnabled: false,
+    unlockMessage: 'SNITCH coworkers (orange) will call the boss on you! Avoid them when gaming.',
+  },
+  {
+    id: 4,
+    name: 'The Grind',
+    goal: 10000,
+    enabledBosses: [BossType.MANAGER, BossType.DIRECTOR, BossType.VP],
+    enabledCoworkers: [CoworkerType.HELPFUL, CoworkerType.SNITCH, CoworkerType.GOSSIP],
+    concentrationEnabled: true,
+    unlockMessage: 'CONCENTRATION system active! Drains while gaming, recover when idle. Low concentration = slower mode switching.\n\nGOSSIP coworkers (pink) will interrupt you with chatter (-20 concentration).\n\nCoffee areas restore concentration based on recent losses.',
+  },
+  {
+    id: 5,
+    name: 'Full Office Experience',
+    goal: Infinity, // endless mode
+    enabledBosses: [BossType.MANAGER, BossType.DIRECTOR, BossType.VP, BossType.CEO],
+    enabledCoworkers: [CoworkerType.HELPFUL, CoworkerType.SNITCH, CoworkerType.GOSSIP, CoworkerType.DISTRACTION],
+    concentrationEnabled: true,
+    unlockMessage: 'DISTRACTION coworkers (blue) will ask for help.\n\nPress H to help (+10 pts, -15 concentration, 3s lock)\nPress I to ignore (-5 pts, -10 concentration)\n\nThe CEO (black) has massive detection radius but moves slowly. High risk, high reward!',
+  },
+];
+
 
 
