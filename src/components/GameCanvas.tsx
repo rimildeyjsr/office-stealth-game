@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CANVAS_HEIGHT, CANVAS_WIDTH, QUESTION_CHOICES, PHASES } from '../game/constants.ts';
+import { CANVAS_HEIGHT, CANVAS_WIDTH, QUESTION_CHOICES } from '../game/constants.ts';
 import { calculateDynamicMultiplier, createInitialState, drawFrame, updateGameState, checkPhaseCompletion, advancePhase, initializeSprites } from '../game/GameEngine.ts';
 import type { Boss, BossWarning, Desk, GameState, Player } from '../game/types.ts';
 import { hasLineOfSight } from '../game/collision.ts';
