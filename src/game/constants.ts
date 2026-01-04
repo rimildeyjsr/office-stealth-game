@@ -201,8 +201,8 @@ export const QUESTION_CHOICES: Record<'answer' | 'ignore', QuestionChoice> = {
   },
   ignore: {
     action: 'ignore',
-    label: 'Ignore (-50% score)',
-    scoreChange: -0.5, // Special: multiplier to halve current score
+    label: 'Ignore (-5 pts)',
+    scoreChange: -5,
     lockDurationMs: 0,
   },
 };
@@ -210,11 +210,10 @@ export const QUESTION_CHOICES: Record<'answer' | 'ignore', QuestionChoice> = {
 // Phase 3.6: Concentration system configuration
 export const CONCENTRATION_CONFIG = {
   maxConcentration: 100,
-  recoveryRateWorking: 2, // per second when working at desk
-  recoveryRateIdle: 4, // per second when walking around (higher - taking a break)
-  passiveDrainRate: 1.5, // per second while gaming
-  lowThreshold: 70, // triggers switch delay
-  switchDelayMs: 1000, // delay when below threshold
+  recoveryRate: 5, // per second
+  passiveDrainRate: 5 / 30, // 5 points per 30 seconds (converted to per second)
+  lowThreshold: 50,
+  switchDelayMs: 500,
   interruptionPenalties: {
     gossipChat: 20,
     questionAnswer: 15,

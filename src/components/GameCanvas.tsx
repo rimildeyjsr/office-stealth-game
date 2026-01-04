@@ -78,37 +78,33 @@ export const GameCanvas: React.FC = () => {
       }
       // Draw base frame
       drawFrame(ctx, stateRef.current);
+      // Optional: LOS visualization
+      const boss = stateRef.current.bosses[0] as Boss | undefined;
+      if (boss && !stateRef.current.isGameOver) {
+        drawLineOfSight(ctx, boss, stateRef.current.player, stateRef.current.desks);
+      }
 
-      // Skip all overlays when start screen is showing
-      if (!stateRef.current.showStartScreen) {
-        // Optional: LOS visualization
-        const boss = stateRef.current.bosses[0] as Boss | undefined;
-        if (boss && !stateRef.current.isGameOver) {
-          drawLineOfSight(ctx, boss, stateRef.current.player, stateRef.current.desks);
-        }
+      // Enhanced score + multiplier overlay
+      drawScoreAndMultiplier(
+        ctx,
+        Math.round(stateRef.current.score),
+        stateRef.current.suspicion ?? 0,
+        boss ?? null,
+        stateRef.current.player,
+        stateRef.current.desks,
+      );
 
-        // Enhanced score + multiplier overlay
-        drawScoreAndMultiplier(
+      // Enhanced warning overlay (boss pre-spawn)
+      if (!stateRef.current.isGameOver) {
+        drawBossWarning(
           ctx,
-          Math.round(stateRef.current.score),
-          stateRef.current.suspicion ?? 0,
-          boss ?? null,
-          stateRef.current.player,
-          stateRef.current.desks,
+          (stateRef.current as any).bossWarning as BossWarning | null,
+          CANVAS_WIDTH,
         );
-
-        // Enhanced warning overlay (boss pre-spawn)
-        if (!stateRef.current.isGameOver) {
-          drawBossWarning(
-            ctx,
-            (stateRef.current as any).bossWarning as BossWarning | null,
-            CANVAS_WIDTH,
-          );
-          // Draw coworker overlay warnings (helpful + snitch + gossip countdown)
-          drawCoworkerWarnings(ctx, stateRef.current as GameState);
-          // Phase 3.5: question modal overlay
-          drawWorkQuestion(ctx, stateRef.current as GameState);
-        }
+        // Draw coworker overlay warnings (helpful + snitch + gossip countdown)
+        drawCoworkerWarnings(ctx, stateRef.current as GameState);
+        // Phase 3.5: question modal overlay
+        drawWorkQuestion(ctx, stateRef.current as GameState);
       }
 
       // Mouse input for question choices
@@ -150,8 +146,8 @@ export const GameCanvas: React.FC = () => {
           ];
           (stateRef.current as any).activeQuestion = null;
         } else if (inRect(ignoreZone.x, ignoreZone.y, ignoreZone.w, ignoreZone.h)) {
-          // Ignore choice - halve the current score
-          (stateRef.current as any).score = Math.max(0, Math.floor((stateRef.current as any).score * 0.5));
+          // Ignore choice
+          (stateRef.current as any).score = Math.max(0, (stateRef.current as any).score + QUESTION_CHOICES.ignore.scoreChange);
           // Phase 3.6: Apply concentration penalty for ignoring and track loss
           const currentConc = (stateRef.current as any).concentration?.current ?? 100;
           const penalty = 10; // CONCENTRATION_CONFIG.interruptionPenalties.questionIgnore
@@ -197,8 +193,7 @@ export const GameCanvas: React.FC = () => {
           (stateRef.current as any).activeQuestion = null;
         }
         if (e.key.toLowerCase() === 'i') {
-          // Ignore choice - halve the current score
-          (stateRef.current as any).score = Math.max(0, Math.floor((stateRef.current as any).score * 0.5));
+          (stateRef.current as any).score = Math.max(0, (stateRef.current as any).score + QUESTION_CHOICES.ignore.scoreChange);
           // Phase 3.6: Apply concentration penalty for ignoring and track loss
           const currentConc = (stateRef.current as any).concentration?.current ?? 100;
           const penalty = 10; // CONCENTRATION_CONFIG.interruptionPenalties.questionIgnore

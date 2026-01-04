@@ -1,4 +1,4 @@
-import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, BOSS_CONFIGS, SUSPICION_CONFIG, SUSPICION_MECHANICS, COWORKER_SYSTEM, COWORKER_CONFIGS, BOSS_UX, WORK_QUESTIONS, CONCENTRATION_CONFIG } from './constants.ts';
+import { BOSS_SIZE, CANVAS_HEIGHT, CANVAS_WIDTH, PLAYER_SIZE, PLAYER_SPEED, BOSS_CONFIGS, SUSPICION_CONFIG, SUSPICION_MECHANICS, COWORKER_SYSTEM, COWORKER_CONFIGS, BOSS_UX, WORK_QUESTIONS, QUESTION_CHOICES, CONCENTRATION_CONFIG } from './constants.ts';
 import type { Boss, Coworker, Desk, GameMode, GameState, Player } from './types.ts';
 import { createOfficeLayout, getPlayerSeatAnchor, isNearSeatAnchor, isNearCoffeeArea, COFFEE_AREAS } from './office.ts';
 import { checkCollision, hasLineOfSight } from './collision.ts';
@@ -38,7 +38,6 @@ export function createInitialState(): GameState {
     gameMode: 'work',
     score: 0,
     isGameOver: false,
-    showStartScreen: true, // Show instructions on first load
     desks,
     modeOverlayStartMs: null,
     // Init to now so score intervals start immediate in gaming mode
@@ -69,7 +68,7 @@ export function createInitialState(): GameState {
     concentration: {
       current: CONCENTRATION_CONFIG.maxConcentration,
       lastUpdateMs: now,
-      recoveryRate: CONCENTRATION_CONFIG.recoveryRateWorking,
+      recoveryRate: CONCENTRATION_CONFIG.recoveryRate,
       switchDelayMs: CONCENTRATION_CONFIG.switchDelayMs,
       recentLosses: [],
     },
@@ -134,15 +133,6 @@ export function calculateScoreIncrease(
 }
 
 export function updateGameState(state: GameState, input: InputState): GameState {
-  // Handle start screen - pressing space dismisses it and starts the game
-  if (state.showStartScreen) {
-    if (input.toggleMode) {
-      return { ...state, showStartScreen: false };
-    }
-    // Freeze all game logic while start screen is shown
-    return state;
-  }
-
   const { player } = state;
 
   // Movement based on input
@@ -151,12 +141,10 @@ export function updateGameState(state: GameState, input: InputState): GameState 
 
   const hasMovementInput = !!(input.up || input.down || input.left || input.right);
 
-  // Standing up on movement - also switch to work mode (can't game while walking)
+  // Standing up on movement
   let isSitting = player.isSitting ?? false;
-  let gameMode = state.gameMode;
   if (isSitting && hasMovementInput) {
     isSitting = false;
-    gameMode = 'work'; // automatically stop gaming when standing up
   }
 
   if (!isSitting) {
@@ -184,6 +172,8 @@ export function updateGameState(state: GameState, input: InputState): GameState 
 
   // Sitting logic: press E near seat anchor to sit (snap to anchor). Movement stands up.
   const playerDesk = state.desks.find((d) => d.isPlayerDesk) ?? null;
+  // Track current mode; may be overridden below when sitting
+  let gameMode = state.gameMode;
   if (!isSitting && input.interact && playerDesk) {
     const anchor = getPlayerSeatAnchor(playerDesk);
     if (isNearSeatAnchor(newPosition, anchor)) {
@@ -250,7 +240,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
 
   // Phase 3.6: Initialize concentration variable early for use throughout function
   let concentration = { ...state.concentration };
-  if (!isGameOver && gameMode === 'gaming' && isSitting && !(state.conversationState?.isActive)) {
+  if (!isGameOver && gameMode === 'gaming' && !(state.conversationState?.isActive)) {
     if (state.questionLockUntilMs && performance.now() < state.questionLockUntilMs) {
       // score frozen during answer lock
     } else {
@@ -449,7 +439,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   const snitches = coworkers.filter((c) => c.type === 'snitch');
   // If a boss is already incoming (pre-spawn warning active), snitches cannot call the boss
   const bossIncomingSoon = !!bossWarning && !!bossWarning.isActive;
-  if (gameMode === 'gaming' && isSitting && !bossIncomingSoon) {
+  if (gameMode === 'gaming' && !bossIncomingSoon) {
     const now = nowMs;
     if (nextSnitchCheckMs == null || now >= nextSnitchCheckMs) {
       for (const snitch of snitches) {
@@ -523,7 +513,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   // Phase 3.4: Gossip simplified flow — approach player, show top message, lock for 3–8s
   let conversationState = state.conversationState ?? null;
   let nextGossipCheckMs = state.nextGossipCheckMs ?? null;
-  if (gameMode === 'gaming' && isSitting && (bossesOut.length > 0)) {
+  if (gameMode === 'gaming' && (bossesOut.length > 0)) {
     const now = nowMs;
     if (nextGossipCheckMs == null || now >= nextGossipCheckMs) {
       const gossips = coworkers.filter((c) => c.type === 'gossip');
@@ -583,7 +573,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   let activeQuestion = state.activeQuestion ?? null;
   let questionLockUntilMs = state.questionLockUntilMs ?? null;
   let nextDistractionCheckMs = state.nextDistractionCheckMs ?? null;
-  if (gameMode === 'gaming' && isSitting && !(conversationState?.isActive)) {
+  if (gameMode === 'gaming' && !(conversationState?.isActive)) {
     const now = nowMs;
     if (nextDistractionCheckMs == null || now >= nextDistractionCheckMs) {
       const distractions = coworkers.filter((c) => c.type === 'distraction');
@@ -631,8 +621,8 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   // Auto-resolve question on timeout with ignore behavior
   if (activeQuestion && activeQuestion.isActive) {
     if (nowMs - activeQuestion.startMs >= activeQuestion.timeoutMs) {
-      // Ignore path - halve the current score
-      nextScore = Math.max(0, Math.floor(nextScore * 0.5));
+      // Ignore path
+      nextScore = Math.max(0, nextScore + QUESTION_CHOICES.ignore.scoreChange);
       // Phase 3.6: Apply concentration penalty for auto-ignore and track loss
       const penalty = CONCENTRATION_CONFIG.interruptionPenalties.questionIgnore;
       concentration.current = Math.max(0, concentration.current - penalty);
@@ -650,7 +640,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   }
 
   // Guarantee: if 20 seconds pass in gaming with a boss present and no interruptions (gossip or question), force one
-  if (gameMode === 'gaming' && isSitting && bossesOut.length > 0) {
+  if (gameMode === 'gaming' && bossesOut.length > 0) {
     const lastInt = state.lastInterruptionMs ?? nowMs;
     if ((state.nextForcedInterruptionMs ?? (lastInt + 20000)) <= nowMs && !conversationState?.isActive && !(activeQuestion?.isActive)) {
       const hasGossip = coworkers.some((c) => c.type === 'gossip');
@@ -724,7 +714,7 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   }
 
   // Guarantee: force a snitch call after 100s of gaming without one (when no boss is present or even if present, we accelerate next spawn)
-  if (gameMode === 'gaming' && isSitting) {
+  if (gameMode === 'gaming') {
     const due = (state.nextForcedSnitchMs ?? (nowMs + 100000)) <= nowMs;
     if (due) {
       const anySnitch = coworkers.find((c) => c.type === 'snitch');
@@ -750,23 +740,18 @@ export function updateGameState(state: GameState, input: InputState): GameState 
   // Phase 3.6: Update concentration system
   const concentrationDeltaMs = nowMs - concentration.lastUpdateMs;
   const concentrationDeltaSeconds = concentrationDeltaMs / 1000;
-
-  if (gameMode === 'gaming' && isSitting) {
-    // Drain concentration only while actively gaming (sitting + gaming mode)
-    concentration.current = Math.max(0,
-      concentration.current - (CONCENTRATION_CONFIG.passiveDrainRate * concentrationDeltaSeconds)
-    );
-  } else if (!isSitting) {
-    // Walking around (idle) - recover faster (taking a break)
-    concentration.current = Math.min(
+  
+  // Automatic recovery at +5% per second when not interrupted, minus passive drain
+  if (!conversationState?.isActive && !activeQuestion?.isActive) {
+    const netRecoveryRate = concentration.recoveryRate - CONCENTRATION_CONFIG.passiveDrainRate;
+    concentration.current = Math.max(0, Math.min(
       CONCENTRATION_CONFIG.maxConcentration,
-      concentration.current + (CONCENTRATION_CONFIG.recoveryRateIdle * concentrationDeltaSeconds)
-    );
+      concentration.current + (netRecoveryRate * concentrationDeltaSeconds)
+    ));
   } else {
-    // Sitting but not gaming (working mode) - recover slower
-    concentration.current = Math.min(
-      CONCENTRATION_CONFIG.maxConcentration,
-      concentration.current + (CONCENTRATION_CONFIG.recoveryRateWorking * concentrationDeltaSeconds)
+    // During interruptions, only apply passive drain (no recovery)
+    concentration.current = Math.max(0, 
+      concentration.current - (CONCENTRATION_CONFIG.passiveDrainRate * concentrationDeltaSeconds)
     );
   }
   
@@ -864,86 +849,6 @@ export function drawFrame(ctx: CanvasRenderingContext2D, state: GameState, frame
   // Background
   ctx.fillStyle = '#111827'; // Tailwind gray-900 like background
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
-  // Start screen - draw early and return to prevent any game elements from showing
-  if (state.showStartScreen) {
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
-
-    const centerX = CANVAS_WIDTH / 2;
-    let y = 60;
-
-    // Title
-    ctx.fillStyle = '#10B981';
-    ctx.font = 'bold 32px monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText('OFFICE STEALTH', centerX, y);
-    y += 50;
-
-    ctx.fillStyle = '#9CA3AF';
-    ctx.font = '14px monospace';
-    ctx.fillText('Slack off without getting caught!', centerX, y);
-    y += 50;
-
-    // Controls section
-    ctx.fillStyle = '#F59E0B';
-    ctx.font = 'bold 18px monospace';
-    ctx.fillText('— CONTROLS —', centerX, y);
-    y += 35;
-
-    ctx.fillStyle = '#E5E7EB';
-    ctx.font = '14px monospace';
-    const controls = [
-      ['WASD', 'Move around'],
-      ['E', 'Sit at your desk'],
-      ['SPACE', 'Toggle Work / Gaming mode'],
-      ['H', 'Help coworker (+10 pts)'],
-      ['I', 'Ignore coworker (-50% score)'],
-      ['R', 'Restart game'],
-    ];
-    // Offset left from center for the two-column layout
-    const keyCol = centerX - 80;
-    const descCol = centerX - 20;
-    for (const [key, desc] of controls) {
-      ctx.fillStyle = '#10B981';
-      ctx.textAlign = 'right';
-      ctx.fillText(key, keyCol, y);
-      ctx.fillStyle = '#E5E7EB';
-      ctx.textAlign = 'left';
-      ctx.fillText(desc, descCol, y);
-      y += 24;
-    }
-    y += 20;
-
-    // Scoring section
-    ctx.fillStyle = '#F59E0B';
-    ctx.font = 'bold 18px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText('— SCORING —', centerX, y);
-    y += 35;
-
-    ctx.fillStyle = '#E5E7EB';
-    ctx.font = '14px monospace';
-    const scoring = [
-      'Game while sitting at your desk to earn points',
-      'Higher suspicion = higher multiplier = more risk!',
-      'Walking around is safe but earns nothing',
-      'Avoid bosses - they will catch you gaming!',
-      'Coworkers may help, distract, or snitch on you',
-    ];
-    for (const line of scoring) {
-      ctx.fillText(line, centerX, y);
-      y += 22;
-    }
-    y += 30;
-
-    // Start prompt
-    ctx.fillStyle = '#10B981';
-    ctx.font = 'bold 20px monospace';
-    ctx.fillText('Press SPACE to Start', centerX, y);
-    return; // Don't draw anything else
-  }
 
   // Draw desks
   for (const desk of state.desks) {
