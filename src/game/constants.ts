@@ -228,7 +228,7 @@ export const PHASES: GamePhase[] = [
   {
     id: 1,
     name: 'First Day Tutorial',
-    goal: 500,
+    goal: 1000,
     enabledBosses: [BossType.MANAGER],
     enabledCoworkers: [],
     concentrationEnabled: false,
@@ -237,7 +237,7 @@ export const PHASES: GamePhase[] = [
   {
     id: 2,
     name: 'Morning Shift',
-    goal: 2000,
+    goal: 1000,
     enabledBosses: [BossType.MANAGER, BossType.DIRECTOR],
     enabledCoworkers: [CoworkerType.HELPFUL],
     concentrationEnabled: false,
@@ -246,7 +246,7 @@ export const PHASES: GamePhase[] = [
   {
     id: 3,
     name: 'Office Politics',
-    goal: 5000,
+    goal: 1000,
     enabledBosses: [BossType.MANAGER, BossType.DIRECTOR, BossType.VP],
     enabledCoworkers: [CoworkerType.HELPFUL, CoworkerType.SNITCH],
     concentrationEnabled: false,
@@ -255,7 +255,7 @@ export const PHASES: GamePhase[] = [
   {
     id: 4,
     name: 'The Grind',
-    goal: 10000,
+    goal: 1000,
     enabledBosses: [BossType.MANAGER, BossType.DIRECTOR, BossType.VP],
     enabledCoworkers: [CoworkerType.HELPFUL, CoworkerType.SNITCH, CoworkerType.GOSSIP],
     concentrationEnabled: true,

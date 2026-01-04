@@ -226,7 +226,7 @@ export const PhaseTransition: React.FC<PhaseTransitionProps> = ({ phaseState, on
           >
             Goal: {currentPhase.goal === Infinity ? 'Survive!' : `${currentPhase.goal} points`}
           </p>
-          {completedPhase && completedPhase.unlockMessage && (
+          {currentPhase.unlockMessage && (
             <div
               style={{
                 backgroundColor: '#374151',
@@ -239,13 +239,13 @@ export const PhaseTransition: React.FC<PhaseTransitionProps> = ({ phaseState, on
               <p style={{ fontSize: '14px', color: '#10B981', fontWeight: 'bold', marginBottom: '8px' }}>
                 NEW MECHANICS:
               </p>
-              {completedPhase.unlockMessage.split('\n\n').map((section, idx) => (
+              {currentPhase.unlockMessage.split('\n\n').map((section, idx) => (
                 <p
                   key={idx}
                   style={{
                     fontSize: '14px',
                     color: '#D1D5DB',
-                    marginBottom: idx < completedPhase.unlockMessage.split('\n\n').length - 1 ? '12px' : '0',
+                    marginBottom: idx < currentPhase.unlockMessage.split('\n\n').length - 1 ? '12px' : '0',
                     lineHeight: '1.5',
                     whiteSpace: 'pre-line',
                   }}
