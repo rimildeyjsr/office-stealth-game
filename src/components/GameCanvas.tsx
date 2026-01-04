@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { CANVAS_HEIGHT, CANVAS_WIDTH, QUESTION_CHOICES, PHASES } from '../game/constants.ts';
-import { calculateDynamicMultiplier, createInitialState, drawFrame, updateGameState, checkPhaseCompletion, advancePhase } from '../game/GameEngine.ts';
+import { calculateDynamicMultiplier, createInitialState, drawFrame, updateGameState, checkPhaseCompletion, advancePhase, initializeSprites } from '../game/GameEngine.ts';
 import type { Boss, BossWarning, Desk, GameState, Player } from '../game/types.ts';
 import { hasLineOfSight } from '../game/collision.ts';
 import { WARNING_CONFIG } from '../game/constants.ts';
@@ -24,6 +24,11 @@ export const GameCanvas: React.FC = () => {
   // Phase system state
   const [showTutorial, setShowTutorial] = useState(true);
   const [showPhaseTransition, setShowPhaseTransition] = useState(true); // Start with transition for Phase 1
+
+  // Initialize sprites on mount
+  useEffect(() => {
+    initializeSprites();
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

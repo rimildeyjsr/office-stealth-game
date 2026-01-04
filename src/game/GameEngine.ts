@@ -5,6 +5,7 @@ import { checkCollision, hasLineOfSight } from './collision.ts';
 import { createBossFromConfig, getRandomDespawnDuration, getRandomSpawnDelay, isPlayerDetected, selectRandomBossType, updateBoss } from './boss.ts';
 import { BossType, CoworkerType } from './types.ts';
 import { createCoworkerFromConfig, getRandomCoworkerSpawnDelay, updateCoworker, pickRandomCoworkerConfig, checkHelpfulCoworkerAction, maybeStartHelpfulRush, clearExpiredRush, updateRushTargetTowardsPlayer, checkSnitchAction, maybeBiasSnitchTowardPlayer, checkGossipInterruption, checkDistractionQuestion } from './coworker.ts';
+import { spriteLoader } from './SpriteLoader.ts';
 
 export interface InputState {
   up: boolean;
@@ -14,6 +15,31 @@ export interface InputState {
   interact?: boolean; // E key; one-shot per press
   toggleMode?: boolean; // Spacebar; one-shot per press
   _toggleHandled?: boolean; // internal edge-detection flag
+}
+
+/**
+ * Initialize and load all game sprites
+ */
+export async function initializeSprites(): Promise<void> {
+  const sprites = [
+    { name: 'desk', path: '/src/assets/sprites/desk.png' },
+    { name: 'player-desk', path: '/src/assets/sprites/player-desk.png' },
+    { name: 'player-idle', path: '/src/assets/sprites/player-idle.png' },
+    { name: 'player-working', path: '/src/assets/sprites/player-working.png' },
+    { name: 'player-gaming', path: '/src/assets/sprites/player-gaming.png' },
+    { name: 'boss-manager', path: '/src/assets/sprites/boss-manager.png' },
+    { name: 'boss-director', path: '/src/assets/sprites/boss-director.png' },
+    { name: 'boss-vp', path: '/src/assets/sprites/boss-vp.png' },
+    { name: 'boss-ceo', path: '/src/assets/sprites/boss-ceo.png' },
+    // Add more sprites here as they become available
+  ];
+
+  try {
+    await spriteLoader.loadSprites(sprites);
+    console.log('✓ Sprites loaded successfully');
+  } catch (error) {
+    console.warn('⚠ Some sprites failed to load, falling back to rectangles:', error);
+  }
 }
 
 export function createInitialState(): GameState {
@@ -967,10 +993,35 @@ export function drawFrame(ctx: CanvasRenderingContext2D, state: GameState, frame
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
   // Draw desks
+  const deskSprite = spriteLoader.getSprite('desk');
+  const playerDeskSprite = spriteLoader.getSprite('player-desk');
+  const deskScale = 1.5; // Scale up desk sprites for better visibility
   for (const desk of state.desks) {
-    ctx.fillStyle = desk.isPlayerDesk ? '#374151' : '#1F2937'; // slightly different shades
     const { x, y, width, height } = desk.bounds;
-    ctx.fillRect(x, y, width, height);
+    // Calculate scaled dimensions
+    const scaledWidth = width * deskScale;
+    const scaledHeight = height * deskScale;
+    // Center the scaled sprite on the original bounds
+    const offsetX = (width - scaledWidth) / 2;
+    const offsetY = (height - scaledHeight) / 2;
+
+    if (desk.isPlayerDesk) {
+      // Player desk: use player-desk sprite if available, otherwise fallback to rectangle
+      if (playerDeskSprite) {
+        ctx.drawImage(playerDeskSprite, x + offsetX, y + offsetY, scaledWidth, scaledHeight);
+      } else {
+        ctx.fillStyle = '#374151';
+        ctx.fillRect(x, y, width, height);
+      }
+    } else {
+      // Non-player desks: use sprite if available, otherwise fallback to rectangle
+      if (deskSprite) {
+        ctx.drawImage(deskSprite, x + offsetX, y + offsetY, scaledWidth, scaledHeight);
+      } else {
+        ctx.fillStyle = '#1F2937';
+        ctx.fillRect(x, y, width, height);
+      }
+    }
   }
 
   // Phase 3.6: Draw coffee break areas with cooldown status
@@ -1027,11 +1078,49 @@ export function drawFrame(ctx: CanvasRenderingContext2D, state: GameState, frame
     ctx.beginPath();
     ctx.arc(boss.position.x, boss.position.y, boss.detectionRadius, 0, Math.PI * 2);
     ctx.stroke();
-    // Boss square
+
+    // Boss rendering: use sprite based on type
     const visualSize = boss.size ?? BOSS_SIZE;
     const visualColor = boss.color ?? '#EF4444';
-    ctx.fillStyle = visualColor;
-    ctx.fillRect(boss.position.x - visualSize / 2, boss.position.y - visualSize / 2, visualSize, visualSize);
+
+    // Get sprite based on boss type
+    const bossSpriteName = `boss-${boss.type}`;
+    const bossSprite = spriteLoader.getSprite(bossSpriteName);
+
+    if (bossSprite) {
+      // Boss sizes scale from player size (140px base)
+      // Manager: 1.2x, Director: 1.4x, VP: 1.6x, CEO: 1.85x
+      const playerSpriteSize = 140;
+      let spriteSize: number;
+      switch (boss.type) {
+        case 'manager':
+          spriteSize = playerSpriteSize * 1.2; // 168px
+          break;
+        case 'director':
+          spriteSize = playerSpriteSize * 1.4; // 196px
+          break;
+        case 'vp':
+          spriteSize = playerSpriteSize * 1.6; // 224px
+          break;
+        case 'ceo':
+          spriteSize = playerSpriteSize * 1.85; // 259px
+          break;
+        default:
+          spriteSize = playerSpriteSize * 1.2;
+      }
+      // Render boss sprite centered on position
+      ctx.drawImage(
+        bossSprite,
+        boss.position.x - spriteSize / 2,
+        boss.position.y - spriteSize / 2,
+        spriteSize,
+        spriteSize
+      );
+    } else {
+      // Fallback to colored square
+      ctx.fillStyle = visualColor;
+      ctx.fillRect(boss.position.x - visualSize / 2, boss.position.y - visualSize / 2, visualSize, visualSize);
+    }
   }
 
   // Draw boss shouts (speech bubbles)
@@ -1105,11 +1194,39 @@ export function drawFrame(ctx: CanvasRenderingContext2D, state: GameState, frame
     ctx.fillText('Press R to Restart', CANVAS_WIDTH / 2, CANVAS_HEIGHT / 2 + 20);
   }
 
-  // Player color by state: idle (blue), working (green), gaming (red)
+  // Player rendering: use sprites based on state (idle, working, gaming)
   const isSittingNow = !!state.player.isSitting;
   const isWorking = state.gameMode === 'work';
-  ctx.fillStyle = isSittingNow ? (isWorking ? '#10B981' : '#EF4444') : '#3B82F6';
-  ctx.fillRect(state.player.position.x, state.player.position.y, PLAYER_SIZE, PLAYER_SIZE);
+
+  // Determine which sprite to use
+  let playerSprite: HTMLImageElement | null = null;
+  if (!isSittingNow) {
+    playerSprite = spriteLoader.getSprite('player-idle');
+  } else if (isWorking) {
+    playerSprite = spriteLoader.getSprite('player-working');
+  } else {
+    playerSprite = spriteLoader.getSprite('player-gaming');
+  }
+
+  // Render player sprite or fallback to colored rectangle
+  if (playerSprite) {
+    // Use large size for detailed AI-generated sprites (140x140 for all states)
+    const renderSize = 140;
+    // Center the sprite on the player position
+    const offsetX = -60; // Adjust to center larger sprites
+    const offsetY = -60;
+    ctx.drawImage(
+      playerSprite,
+      state.player.position.x + offsetX,
+      state.player.position.y + offsetY,
+      renderSize,
+      renderSize
+    );
+  } else {
+    // Fallback to original colored rectangle
+    ctx.fillStyle = isSittingNow ? (isWorking ? '#10B981' : '#EF4444') : '#3B82F6';
+    ctx.fillRect(state.player.position.x, state.player.position.y, PLAYER_SIZE, PLAYER_SIZE);
+  }
 
   // State label top-left (IDLE/WORKING/GAMING). Apply 200ms fade only when switching modes (work<->gaming)
   ctx.save();
