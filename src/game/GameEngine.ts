@@ -22,21 +22,21 @@ export interface InputState {
  */
 export async function initializeSprites(): Promise<void> {
   const sprites = [
-    { name: 'desk', path: '/src/assets/sprites/desk.png' },
-    { name: 'player-desk', path: '/src/assets/sprites/player-desk.png' },
-    { name: 'player-idle', path: '/src/assets/sprites/player-idle.png' },
-    { name: 'player-working', path: '/src/assets/sprites/player-working.png' },
-    { name: 'player-gaming', path: '/src/assets/sprites/player-gaming.png' },
-    { name: 'boss-manager', path: '/src/assets/sprites/boss-manager.png' },
-    { name: 'boss-director', path: '/src/assets/sprites/boss-director.png' },
-    { name: 'boss-vp', path: '/src/assets/sprites/boss-vp.png' },
-    { name: 'boss-ceo', path: '/src/assets/sprites/boss-ceo.png' },
-    { name: 'coworker-helpful', path: '/src/assets/sprites/coworker-helpful.png' },
-    { name: 'coworker-snitch', path: '/src/assets/sprites/coworker-snitch.png' },
-    { name: 'coworker-gossip', path: '/src/assets/sprites/coworker-gossip.png' },
-    { name: 'coworker-distraction', path: '/src/assets/sprites/coworker-distraction.png' },
-    { name: 'coffee-machine', path: '/src/assets/sprites/coffee-machine.png' },
-    { name: 'break-room', path: '/src/assets/sprites/break-room.png' },
+    { name: 'desk', path: '/sprites/desk.png' },
+    { name: 'player-desk', path: '/sprites/player-desk.png' },
+    { name: 'player-idle', path: '/sprites/player-idle.png' },
+    { name: 'player-working', path: '/sprites/player-working.png' },
+    { name: 'player-gaming', path: '/sprites/player-gaming.png' },
+    { name: 'boss-manager', path: '/sprites/boss-manager.png' },
+    { name: 'boss-director', path: '/sprites/boss-director.png' },
+    { name: 'boss-vp', path: '/sprites/boss-vp.png' },
+    { name: 'boss-ceo', path: '/sprites/boss-ceo.png' },
+    { name: 'coworker-helpful', path: '/sprites/coworker-helpful.png' },
+    { name: 'coworker-snitch', path: '/sprites/coworker-snitch.png' },
+    { name: 'coworker-gossip', path: '/sprites/coworker-gossip.png' },
+    { name: 'coworker-distraction', path: '/sprites/coworker-distraction.png' },
+    { name: 'coffee-machine', path: '/sprites/coffee-machine.png' },
+    { name: 'break-room', path: '/sprites/break-room.png' },
   ];
 
   try {
